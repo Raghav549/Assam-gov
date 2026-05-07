@@ -1,4 +1,11 @@
-import { storage, ref as storageRef, uploadBytes, getDownloadURL, deleteObject } from './firebase';
+import { storage } from './firebase';
+
+import {
+  ref as storageRef,
+  uploadBytes,
+  getDownloadURL,
+  deleteObject
+} from 'firebase/storage';
 /**
  * Upload image file to Firebase Storage
  * @param {File} file - The file to upload
