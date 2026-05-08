@@ -1,0 +1,36 @@
+<svg width="512" height="512" viewBox="0 0 512 512" fill="none" xmlns="http://www.w3.org/2000/svg">
+
+<defs>
+
+<linearGradient id="bg" x1="0" y1="0" x2="512" y2="512">
+<stop offset="0%" stop-color="#8B5CF6"/>
+<stop offset="50%" stop-color="#06B6D4"/>
+<stop offset="100%" stop-color="#2563EB"/>
+</linearGradient>
+
+<linearGradient id="glass" x1="0" y1="0" x2="512" y2="512">
+<stop offset="0%" stop-color="rgba(255,255,255,0.45)"/>
+<stop offset="100%" stop-color="rgba(255,255,255,0.05)"/>
+</linearGradient>
+
+</defs>
+
+<rect width="512" height="512" rx="120" fill="url(#bg)"/>
+
+<circle cx="256" cy="256" r="170" fill="rgba(255,255,255,0.08)"/>
+
+<path
+d="M165 150H215L255 230L295 150H345L280 285V355H230V285L165 150Z"
+fill="white"
+/>
+
+<rect
+x="145"
+y="390"
+width="220"
+height="18"
+rx="9"
+fill="rgba(255,255,255,0.7)"
+/>
+
+</svg>
