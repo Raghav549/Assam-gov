@@ -87,7 +87,7 @@ const Navbar = () => {
             </Link>
 
             {/* DESKTOP NAV */}
-            <div className="hidden lg:flex items-center gap-1 overflow-hidden">
+            <div className="hidden lg:flex items-center gap-2 flex-wrap">
 
               {navLinks.map((link) => (
 
@@ -113,7 +113,7 @@ const Navbar = () => {
             </div>
 
             {/* RIGHT SIDE */}
-            <div className="hidden lg:flex items-center gap-3 flex-shrink-0">
+            <div className="hidden lg:flex items-center gap-2 flex-wrap">
 
               {user ? (
                 <>
@@ -197,7 +197,7 @@ const Navbar = () => {
                 </>
               ) : (
 
-                <div className="hidden lg:flex items-center gap-2">
+                <div className="hidden lg:flex items-center gap-2 flex-wrap">
 
                   <Link
                     to="/login"
