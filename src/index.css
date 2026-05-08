@@ -1,0 +1,466 @@
+/* ============================================
+   YOUTH ASSAM - ULTRA PREMIUM GLOBAL STYLES
+   ============================================ */
+
+/* GOOGLE FONT */
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800;900&display=swap');
+
+/* TAILWIND */
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* CUSTOM FILES */
+@import './styles/global.css';
+@import './styles/animations.css';
+@import './styles/responsive.css';
+
+/* ============================================
+   ROOT COLORS
+   ============================================ */
+
+:root {
+
+  --primary-dark: #0f172a;
+  --primary-text: #1e293b;
+  --secondary-text: #64748b;
+
+  --glass-bg: rgba(255,255,255,0.72);
+
+  --violet: #7c3aed;
+  --blue: #2563eb;
+  --cyan: #06b6d4;
+  --green: #10b981;
+
+  --main-gradient:
+    linear-gradient(
+      135deg,
+      #7c3aed 0%,
+      #06b6d4 50%,
+      #2563eb 100%
+    );
+
+  --soft-bg:
+    linear-gradient(
+      135deg,
+      #f5f3ff 0%,
+      #eefcff 50%,
+      #eff6ff 100%
+    );
+
+}
+
+/* ============================================
+   GLOBAL RESET
+   ============================================ */
+
+* {
+  margin: 0;
+  padding: 0;
+  box-sizing: border-box;
+}
+
+/* ============================================
+   HTML
+   ============================================ */
+
+html {
+
+  scroll-behavior: smooth;
+
+  font-size: 16px;
+
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+
+  text-rendering: optimizeLegibility;
+
+  overflow-x: hidden;
+
+}
+
+/* ============================================
+   BODY
+   ============================================ */
+
+body {
+
+  font-family:
+    'Inter',
+    -apple-system,
+    BlinkMacSystemFont,
+    'Segoe UI',
+    sans-serif;
+
+  color: var(--primary-text);
+
+  background:
+    radial-gradient(
+      circle at top left,
+      rgba(124,58,237,0.10),
+      transparent 30%
+    ),
+
+    radial-gradient(
+      circle at top right,
+      rgba(6,182,212,0.10),
+      transparent 30%
+    ),
+
+    radial-gradient(
+      circle at bottom,
+      rgba(37,99,235,0.08),
+      transparent 35%
+    ),
+
+    #f8fbff;
+
+  background-attachment: fixed;
+
+  line-height: 1.6;
+
+  overflow-x: hidden;
+
+  min-height: 100vh;
+
+}
+
+/* ============================================
+   PREMIUM SCROLLBAR
+   ============================================ */
+
+::-webkit-scrollbar {
+  width: 10px;
+  height: 10px;
+}
+
+::-webkit-scrollbar-track {
+
+  background:
+    rgba(255,255,255,0.6);
+
+  backdrop-filter: blur(10px);
+
+}
+
+::-webkit-scrollbar-thumb {
+
+  background:
+    linear-gradient(
+      to bottom,
+      #7c3aed,
+      #06b6d4,
+      #2563eb
+    );
+
+  border-radius: 999px;
+
+}
+
+::-webkit-scrollbar-thumb:hover {
+
+  background:
+    linear-gradient(
+      to bottom,
+      #6d28d9,
+      #0891b2,
+      #1d4ed8
+    );
+
+}
+
+/* ============================================
+   TEXT SELECTION
+   ============================================ */
+
+::selection {
+
+  background: #7c3aed;
+  color: white;
+
+}
+
+/* ============================================
+   MEDIA ELEMENTS
+   ============================================ */
+
+img,
+video,
+svg,
+canvas,
+picture {
+
+  max-width: 100%;
+  height: auto;
+  display: block;
+
+}
+
+/* ============================================
+   FORM ELEMENTS
+   ============================================ */
+
+input,
+textarea,
+select,
+button {
+
+  font-family: inherit;
+  font-size: inherit;
+  line-height: inherit;
+
+}
+
+/* ============================================
+   BUTTON RESET
+   ============================================ */
+
+button {
+
+  cursor: pointer;
+  border: none;
+  outline: none;
+
+}
+
+/* ============================================
+   LINKS
+   ============================================ */
+
+a {
+
+  text-decoration: none;
+  color: inherit;
+
+  transition:
+    all 0.25s ease;
+
+}
+
+/* ============================================
+   INPUTS
+   ============================================ */
+
+input,
+textarea,
+select {
+
+  background: rgba(255,255,255,0.82);
+
+  backdrop-filter: blur(10px);
+
+  border: 1px solid rgba(255,255,255,0.4);
+
+  transition: all 0.3s ease;
+
+}
+
+input:focus,
+textarea:focus,
+select:focus {
+
+  outline: none;
+
+  border-color: #7c3aed;
+
+  box-shadow:
+    0 0 0 4px rgba(124,58,237,0.12);
+
+}
+
+/* ============================================
+   GLASS CARD
+   ============================================ */
+
+.glass-card {
+
+  background: rgba(255,255,255,0.72);
+
+  backdrop-filter: blur(18px);
+
+  border:
+    1px solid rgba(255,255,255,0.5);
+
+  box-shadow:
+    0 20px 50px rgba(15,23,42,0.08);
+
+}
+
+/* ============================================
+   PREMIUM BUTTON
+   ============================================ */
+
+.premium-btn {
+
+  background: var(--main-gradient);
+
+  color: white;
+
+  border-radius: 20px;
+
+  font-weight: 700;
+
+  transition:
+    all 0.3s ease;
+
+  box-shadow:
+    0 15px 40px rgba(59,130,246,0.25);
+
+}
+
+.premium-btn:hover {
+
+  transform:
+    translateY(-3px)
+    scale(1.02);
+
+  box-shadow:
+    0 20px 50px rgba(59,130,246,0.35);
+
+}
+
+/* ============================================
+   GRADIENT TEXT
+   ============================================ */
+
+.gradient-text {
+
+  background:
+    linear-gradient(
+      to right,
+      #7c3aed,
+      #06b6d4,
+      #2563eb
+    );
+
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+
+  background-clip: text;
+
+  color: transparent;
+
+}
+
+/* ============================================
+   REMOVE LIST STYLE
+   ============================================ */
+
+ul,
+ol {
+
+  list-style: none;
+
+}
+
+/* ============================================
+   FOCUS VISIBLE
+   ============================================ */
+
+:focus-visible {
+
+  outline: 2px solid #7c3aed;
+  outline-offset: 2px;
+
+}
+
+/* ============================================
+   PRINT MODE
+   ============================================ */
+
+@media print {
+
+  body {
+
+    background: white;
+    color: black;
+
+  }
+
+  .no-print {
+
+    display: none !important;
+
+  }
+
+  a {
+
+    text-decoration: underline;
+
+  }
+
+}
+
+/* ============================================
+   REDUCED MOTION
+   ============================================ */
+
+@media (prefers-reduced-motion: reduce) {
+
+  *,
+  *::before,
+  *::after {
+
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+
+    transition-duration: 0.01ms !important;
+
+  }
+
+  html {
+
+    scroll-behavior: auto;
+
+  }
+
+}
+
+/* ============================================
+   MOBILE OPTIMIZATION
+   ============================================ */
+
+@media (max-width: 768px) {
+
+  body {
+
+    font-size: 15px;
+
+  }
+
+  h1 {
+
+    line-height: 1.1 !important;
+
+  }
+
+}
+
+/* ============================================
+   SMOOTH ANIMATIONS
+   ============================================ */
+
+.fade-up {
+
+  animation:
+    fadeUp 0.8s ease forwards;
+
+}
+
+@keyframes fadeUp {
+
+  from {
+
+    opacity: 0;
+    transform: translateY(30px);
+
+  }
+
+  to {
+
+    opacity: 1;
+    transform: translateY(0);
+
+  }
+
+}
