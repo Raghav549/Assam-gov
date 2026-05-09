@@ -4,34 +4,22 @@
 
 const nodemailer = require('nodemailer');
 
-// ============================================
-// SMTP TRANSPORTER
-// ============================================
-
 const transporter = nodemailer.createTransport({
 
-  host: 'smtp.gmail.com',
+  host: "smtp.gmail.com",
 
-  port: 587,
+  port: 465,
 
-  secure: false,
+  secure: true,
 
   auth: {
-
     user: process.env.EMAIL_USER,
-
     pass: process.env.EMAIL_PASS,
-
   },
 
-  requireTLS: true,
-
-  family: 4,
-
   tls: {
-
+    family: 4,
     rejectUnauthorized: false,
-
   },
 
 });
