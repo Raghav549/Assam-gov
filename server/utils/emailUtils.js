@@ -1,24 +1,3 @@
-// ============================================
-// EMAIL UTILS - PRODUCTION READY VERSION
-// ============================================
-
-const nodemailer = require('nodemailer');
-
-// ============================================
-// ENV DEBUG
-// ============================================
-
-console.log('EMAIL_USER =', process.env.EMAIL_USER);
-
-console.log(
-  'EMAIL_PASS =',
-  process.env.EMAIL_PASS ? 'FOUND' : 'MISSING'
-);
-
-// ============================================
-// SMTP TRANSPORTER
-// ============================================
-
 const transporter = nodemailer.createTransport({
 
   service: 'gmail',
