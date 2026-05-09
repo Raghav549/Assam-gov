@@ -1,34 +1,63 @@
+const nodemailer = require('nodemailer');
+
 const transporter = nodemailer.createTransport({
 
   service: 'gmail',
 
   auth: {
-
     user: process.env.EMAIL_USER,
-
     pass: process.env.EMAIL_PASS,
-
   },
 
 });
 
-// ============================================
-// VERIFY SMTP CONNECTION
-// ============================================
-
 transporter.verify((error, success) => {
 
   if (error) {
-
     console.error('SMTP ERROR:', error);
-
   } else {
-
     console.log('SMTP SERVER READY');
-
   }
 
 });
+
+exports.sendOTPEmail = async (to, otp) => {
+
+  try {
+
+    const info = await transporter.sendMail({
+
+      from: `"Youth Assam" <${process.env.EMAIL_USER}>`,
+
+      to,
+
+      subject: 'Your OTP Code',
+
+      html: `
+        <div style="font-family:Arial;padding:20px;">
+          <h2>Youth Assam OTP</h2>
+          <h1>${otp}</h1>
+          <p>This OTP expires in 10 minutes.</p>
+        </div>
+      `,
+
+    });
+
+    console.log('OTP SENT:', info.messageId);
+
+    return {
+      success: true,
+    };
+
+  } catch (error) {
+
+    console.error('OTP EMAIL ERROR:', error);
+
+    throw error;
+
+  }
+
+};
 
 // ============================================
 // SEND OTP EMAIL
