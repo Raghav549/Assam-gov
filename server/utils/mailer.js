@@ -1,20 +1,25 @@
 const nodemailer = require('nodemailer');
 
 function createTransporter() {
-  const host = process.env.SMTP_HOST;
-  const port = Number(process.env.SMTP_PORT || 587);
   const user = process.env.SMTP_USER || process.env.EMAIL_USER;
   const pass = process.env.SMTP_PASS || process.env.EMAIL_PASS;
+  const host = process.env.SMTP_HOST || 'smtp.gmail.com';
+  const port = Number(process.env.SMTP_PORT || 587);
 
-  if (!host || !user || !pass) {
-    throw new Error('Email service is not configured. Set SMTP_HOST, SMTP_PORT, SMTP_USER and SMTP_PASS in Render environment variables.');
+  if (!user || !pass) {
+    throw new Error('Email service is not configured. Set EMAIL_USER and EMAIL_PASS or SMTP_USER and SMTP_PASS in Render environment variables.');
   }
 
   return nodemailer.createTransport({
     host,
     port,
     secure: port === 465,
-    auth: { user, pass }
+    requireTLS: port === 587,
+    auth: { user, pass },
+    connectionTimeout: 30000,
+    greetingTimeout: 30000,
+    socketTimeout: 30000,
+    tls: { rejectUnauthorized: true }
   });
 }
 
