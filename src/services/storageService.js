@@ -1,40 +1,36 @@
-import { storage } from './firebase';
+import { supabase } from './firebase';
 
-import {
-  ref as storageRef,
-  uploadBytes,
-  getDownloadURL,
-  deleteObject
-} from 'firebase/storage';
+const BUCKET = 'uploads';
+
 /**
- * Upload image file to Firebase Storage
- * @param {File} file - The file to upload
- * @param {string} path - Storage path prefix
- * @returns {Promise<string>} - Download URL
+ * Upload an image to Supabase Storage.
+ * @param {File} file
+ * @param {string} path Storage path prefix
+ * @returns {Promise<string>} Public URL
  */
 export const uploadImage = async (file, path = 'images') => {
   try {
     if (!file) throw new Error('No file provided');
-    
-    // Validate file type
+
     const allowedTypes = ['image/jpeg', 'image/png', 'image/webp', 'image/gif'];
     if (!allowedTypes.includes(file.type)) {
       throw new Error('Invalid file type. Only JPEG, PNG, WebP, and GIF are allowed.');
     }
-    
-    // Validate file size (max 5MB)
+
     if (file.size > 5 * 1024 * 1024) {
       throw new Error('File size exceeds 5MB limit.');
     }
-    
-    const fileName = `${Date.now()}-${Math.random().toString(36).substring(7)}${getFileType(file)}`;
+
+    const fileName = `${Date.now()}-${Math.random().toString(36).substring(2, 9)}${getFileType(file)}`;
     const storagePath = `${path}/${fileName}`;
-    const fileRef = storageRef(storage, storagePath);
-    
-    const snapshot = await uploadBytes(fileRef, file);
-    const downloadURL = await getDownloadURL(snapshot.ref);
-    
-    return downloadURL;
+
+    const { error } = await supabase.storage
+      .from(BUCKET)
+      .upload(storagePath, file, { upsert: true, contentType: file.type });
+
+    if (error) throw error;
+
+    return getPublicUrl(storagePath);
   } catch (error) {
     console.error('Upload image error:', error);
     throw error;
@@ -42,34 +38,39 @@ export const uploadImage = async (file, path = 'images') => {
 };
 
 /**
- * Upload PDF/document file to Firebase Storage
- * @param {File} file - The file to upload
- * @param {string} path - Storage path prefix
- * @returns {Promise<string>} - Download URL
+ * Upload a PDF/document to Supabase Storage.
+ * @param {File} file
+ * @param {string} path Storage path prefix
+ * @returns {Promise<string>} Public URL
  */
 export const uploadDocument = async (file, path = 'documents') => {
   try {
     if (!file) throw new Error('No file provided');
-    
-    // Validate file type
-    const allowedTypes = ['application/pdf', 'application/msword', 'application/vnd.openxmlformats-officedocument.wordprocessingml.document'];
+
+    const allowedTypes = [
+      'application/pdf',
+      'application/msword',
+      'application/vnd.openxmlformats-officedocument.wordprocessingml.document'
+    ];
+
     if (!allowedTypes.includes(file.type)) {
       throw new Error('Invalid file type. Only PDF and Word documents are allowed.');
     }
-    
-    // Validate file size (max 10MB)
+
     if (file.size > 10 * 1024 * 1024) {
       throw new Error('File size exceeds 10MB limit.');
     }
-    
-    const fileName = `${Date.now()}-${Math.random().toString(36).substring(7)}.pdf`;
+
+    const fileName = `${Date.now()}-${Math.random().toString(36).substring(2, 9)}${getDocumentType(file)}`;
     const storagePath = `${path}/${fileName}`;
-    const fileRef = storageRef(storage, storagePath);
-    
-    const snapshot = await uploadBytes(fileRef, file);
-    const downloadURL = await getDownloadURL(snapshot.ref);
-    
-    return downloadURL;
+
+    const { error } = await supabase.storage
+      .from(BUCKET)
+      .upload(storagePath, file, { upsert: true, contentType: file.type });
+
+    if (error) throw error;
+
+    return getPublicUrl(storagePath);
   } catch (error) {
     console.error('Upload document error:', error);
     throw error;
@@ -77,27 +78,38 @@ export const uploadDocument = async (file, path = 'documents') => {
 };
 
 /**
- * Delete file from Firebase Storage
- * @param {string} url - The download URL of the file
+ * Delete a file from Supabase Storage.
+ * Accepts a URL returned by uploadImage/uploadDocument or a storage path.
+ * @param {string} urlOrPath
  * @returns {Promise<void>}
  */
-export const deleteFile = async (url) => {
+export const deleteFile = async (urlOrPath) => {
   try {
-    if (!url) return;
-    
-    const fileRef = storageRef(storage, url);
-    await deleteObject(fileRef);
+    if (!urlOrPath) return;
+
+    const storagePath = extractStoragePath(urlOrPath);
+    const { error } = await supabase.storage.from(BUCKET).remove([storagePath]);
+
+    if (error) throw error;
   } catch (error) {
     console.error('Delete file error:', error);
     throw error;
   }
 };
 
-/**
- * Get file type extension
- * @param {File} file 
- * @returns {string}
- */
+const getPublicUrl = (storagePath) => {
+  const { data } = supabase.storage.from(BUCKET).getPublicUrl(storagePath);
+  return data.publicUrl;
+};
+
+const extractStoragePath = (urlOrPath) => {
+  if (!urlOrPath.startsWith('http')) return urlOrPath.replace(/^\/+/, '');
+
+  const marker = `/storage/v1/object/public/${BUCKET}/`;
+  const index = urlOrPath.indexOf(marker);
+  return index >= 0 ? decodeURIComponent(urlOrPath.slice(index + marker.length)) : urlOrPath;
+};
+
 const getFileType = (file) => {
   switch (file.type) {
     case 'image/jpeg': return '.jpg';
@@ -108,10 +120,19 @@ const getFileType = (file) => {
   }
 };
 
+const getDocumentType = (file) => {
+  switch (file.type) {
+    case 'application/pdf': return '.pdf';
+    case 'application/msword': return '.doc';
+    case 'application/vnd.openxmlformats-officedocument.wordprocessingml.document': return '.docx';
+    default: return '.bin';
+  }
+};
+
 /**
- * Preview image from file input
- * @param {File} file 
- * @returns {Promise<string>} - Data URL for preview
+ * Create a local preview URL for a selected image.
+ * @param {File} file
+ * @returns {Promise<string>}
  */
 export const previewImage = (file) => {
   return new Promise((resolve, reject) => {
@@ -119,7 +140,7 @@ export const previewImage = (file) => {
       reject(new Error('No file provided'));
       return;
     }
-    
+
     const reader = new FileReader();
     reader.onload = (e) => resolve(e.target.result);
     reader.onerror = (error) => reject(error);
