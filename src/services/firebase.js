@@ -1,908 +1,134 @@
-// ============================================
-// FIREBASE CONFIGURATION & SERVICES (CORRECTED)
-// ============================================
+// Supabase service layer kept at this path for backward-compatible imports.
+// Firebase has been fully removed from the frontend.
 
-import { initializeApp } from 'firebase/app';
-import { 
-  getAuth, 
-  createUserWithEmailAndPassword, 
-  signInWithEmailAndPassword, 
-  signOut, 
-  onAuthStateChanged,
-  updateProfile as updateFirebaseProfile,
-  sendPasswordResetEmail
-} from 'firebase/auth';
-import { 
-  getFirestore, 
-  collection, 
-  doc, 
-  addDoc, 
-  updateDoc, 
-  deleteDoc, 
-  getDoc, 
-  getDocs, 
-  query, 
-  where, 
-  orderBy, 
-  limit, 
-  onSnapshot,
-  serverTimestamp,
-  arrayUnion,
-  arrayRemove,
-  increment
-} from 'firebase/firestore';
-import { 
-  getStorage, 
-  ref as storageRef, 
-  uploadBytes, 
-  getDownloadURL, 
-  deleteObject 
-} from 'firebase/storage';
+import { createClient } from '@supabase/supabase-js';
 
-// Firebase configuration - Replace with your actual Firebase project config
-const firebaseConfig = {
-  apiKey: process.env.REACT_APP_FIREBASE_API_KEY || "AIzaSyDemoKeyReplaceWithYourActualKey",
-  authDomain: process.env.REACT_APP_FIREBASE_AUTH_DOMAIN || "youth-assam.firebaseapp.com",
-  projectId: process.env.REACT_APP_FIREBASE_PROJECT_ID || "youth-assam-project",
-  storageBucket: process.env.REACT_APP_FIREBASE_STORAGE_BUCKET || "youth-assam.appspot.com",
-  messagingSenderId: process.env.REACT_APP_FIREBASE_MESSAGING_SENDER_ID || "123456789",
-  appId: process.env.REACT_APP_FIREBASE_APP_ID || "1:123456789:web:abcdef123456"
+const SUPABASE_URL = process.env.REACT_APP_SUPABASE_URL;
+const SUPABASE_ANON_KEY = process.env.REACT_APP_SUPABASE_ANON_KEY;
+
+if (!SUPABASE_URL || !SUPABASE_ANON_KEY) {
+  console.warn('Supabase environment variables are missing. Add REACT_APP_SUPABASE_URL and REACT_APP_SUPABASE_ANON_KEY.');
+}
+
+export const supabase = createClient(SUPABASE_URL || 'https://placeholder.supabase.co', SUPABASE_ANON_KEY || 'placeholder-anon-key');
+export const auth = supabase.auth;
+export const db = supabase;
+export const storage = supabase.storage;
+
+const tables = {
+  users: 'users', posts: 'posts', scholarships: 'scholarships', courses: 'courses',
+  helpRequests: 'help_requests', donations: 'donations', govtWorks: 'govt_works',
+  govtIssues: 'govt_issues', notifications: 'notifications', comments: 'comments'
 };
 
-// Initialize Firebase
-const app = initializeApp(firebaseConfig);
+export const usersCollection = tables.users;
+export const postsCollection = tables.posts;
+export const scholarshipsCollection = tables.scholarships;
+export const coursesCollection = tables.courses;
+export const helpRequestsCollection = tables.helpRequests;
+export const donationsCollection = tables.donations;
+export const govtWorksCollection = tables.govtWorks;
+export const govtIssuesCollection = tables.govtIssues;
+export const notificationsCollection = tables.notifications;
+export const commentsCollection = tables.comments;
 
-// Initialize Services
-export const auth = getAuth(app);
-export const db = getFirestore(app);
-export const storage = getStorage(app);
+const now = () => new Date().toISOString();
+const unwrap = async (promise) => { const { data, error } = await promise; if (error) throw error; return data; };
+const list = (data) => (data || []).map(row => ({ id: row.id, ...row }));
 
-// ============================================
-// COLLECTION REFERENCES
-// ============================================
-
-export const usersCollection = collection(db, 'users');
-export const postsCollection = collection(db, 'posts');
-export const scholarshipsCollection = collection(db, 'scholarships');
-export const coursesCollection = collection(db, 'courses');
-export const helpRequestsCollection = collection(db, 'helpRequests');
-export const donationsCollection = collection(db, 'donations');
-export const govtWorksCollection = collection(db, 'govtWorks');
-// FIXED TYPO HERE: Added 'export const'
-export const govtIssuesCollection = collection(db, 'govtIssues');
-export const notificationsCollection = collection(db, 'notifications');
-export const commentsCollection = collection(db, 'comments');
-
-// ============================================
-// AUTH SERVICES
-// ============================================
-
+// AUTH
 export const registerUser = async (email, password, displayName) => {
-  try {
-    const userCredential = await createUserWithEmailAndPassword(auth, email, password);
-    await updateFirebaseProfile(userCredential.user, { displayName });
-    
-    // Create user document in Firestore
-    await addDoc(usersCollection, {
-      uid: userCredential.user.uid,
-      email,
-      displayName,
-      role: 'student',
-      profilePicture: null,
-      bio: '',
-      location: '',
-      phone: '',
-      educationLevel: '',
-      interests: [],
-      createdAt: serverTimestamp(),
-      updatedAt: serverTimestamp(),
-      isVerified: false,
-      isActive: true
-    });
-    
-    return userCredential.user;
-  } catch (error) {
-    console.error('Registration error:', error);
-    throw error;
-  }
+  const { data, error } = await supabase.auth.signUp({ email, password });
+  if (error) throw error;
+  if (!data.user) throw new Error('Account could not be created.');
+  const profile = { uid: data.user.id, email, displayName, role: 'student', profilePicture: null, bio: '', location: '', phone: '', educationLevel: '', interests: [], createdAt: now(), updatedAt: now(), isVerified: true, isActive: true };
+  const { error: profileError } = await supabase.from(tables.users).upsert(profile, { onConflict: 'uid' });
+  if (profileError) throw profileError;
+  return { ...data.user, uid: data.user.id };
 };
 
 export const loginUser = async (email, password) => {
-  try {
-    const userCredential = await signInWithEmailAndPassword(auth, email, password);
-    return userCredential.user;
-  } catch (error) {
-    console.error('Login error:', error);
-    throw error;
-  }
+  const { data, error } = await supabase.auth.signInWithPassword({ email, password });
+  if (error) throw error;
+  return { ...data.user, uid: data.user.id };
 };
+export const logoutUser = async () => { const { error } = await supabase.auth.signOut(); if (error) throw error; };
+export const resetPassword = async (email) => { const { error } = await supabase.auth.resetPasswordForEmail(email, { redirectTo: `${window.location.origin}/reset-password` }); if (error) throw error; };
+export const onAuthStateChange = (callback) => { const { data } = supabase.auth.onAuthStateChange((_event, user) => callback(user ? { ...user, uid: user.id } : null)); return () => data.subscription.unsubscribe(); };
 
-export const logoutUser = async () => {
-  try {
-    await signOut(auth);
-  } catch (error) {
-    console.error('Logout error:', error);
-    throw error;
-  }
-};
+// USERS
+export const getUserById = async (uid) => { const data = await unwrap(supabase.from(tables.users).select('*').eq('uid', uid).maybeSingle()); return data ? { id: data.id, ...data } : null; };
+export const updateUserProfile = async (userId, data) => unwrap(supabase.from(tables.users).update({ ...data, updatedAt: now() }).eq('uid', userId));
+export const getAllUsers = async () => list(await unwrap(supabase.from(tables.users).select('*').order('createdAt', { ascending: false })));
+export const updateUserRole = async (userId, role) => unwrap(supabase.from(tables.users).update({ role, updatedAt: now() }).eq('uid', userId));
+export const toggleUserActive = async (userId, isActive) => unwrap(supabase.from(tables.users).update({ isActive, updatedAt: now() }).eq('uid', userId));
 
-export const resetPassword = async (email) => {
-  try {
-    await sendPasswordResetEmail(auth, email);
-  } catch (error) {
-    console.error('Password reset error:', error);
-    throw error;
-  }
-};
+// POSTS
+export const createPost = async (postData) => unwrap(supabase.from(tables.posts).insert({ ...postData, likes: [], likeCount: 0, commentCount: 0, status: 'pending', createdAt: now(), updatedAt: now() }).select().single());
+export const getAllPosts = async (category = null) => { let q = supabase.from(tables.posts).select('*').eq('status', 'approved').order('createdAt', { ascending: false }); if (category) q = q.eq('category', category); return list(await unwrap(q)); };
+export const getPendingPosts = async () => list(await unwrap(supabase.from(tables.posts).select('*').eq('status', 'pending').order('createdAt', { ascending: false })));
+export const approvePost = async (id) => unwrap(supabase.from(tables.posts).update({ status: 'approved', updatedAt: now() }).eq('id', id));
+export const rejectPost = async (id) => unwrap(supabase.from(tables.posts).update({ status: 'rejected', updatedAt: now() }).eq('id', id));
+export const deletePost = async (id) => unwrap(supabase.from(tables.posts).delete().eq('id', id));
+const updatePostLikes = async (id, userId, add) => { const post = await unwrap(supabase.from(tables.posts).select('likes').eq('id', id).single()); const likes = Array.isArray(post.likes) ? post.likes : []; const nextLikes = add ? [...new Set([...likes, userId])] : likes.filter(x => x !== userId); return unwrap(supabase.from(tables.posts).update({ likes: nextLikes, likeCount: nextLikes.length, updatedAt: now() }).eq('id', id)); };
+export const likePost = (id, uid) => updatePostLikes(id, uid, true);
+export const unlikePost = (id, uid) => updatePostLikes(id, uid, false);
 
-export const onAuthStateChange = (callback) => {
-  return onAuthStateChanged(auth, callback);
-};
+// COMMENTS
+export const addComment = async (postId, commentData) => { const comment = await unwrap(supabase.from(tables.comments).insert({ ...commentData, postId, createdAt: now() }).select().single()); const post = await unwrap(supabase.from(tables.posts).select('commentCount').eq('id', postId).single()); await unwrap(supabase.from(tables.posts).update({ commentCount: (post.commentCount || 0) + 1, updatedAt: now() }).eq('id', postId)); return comment; };
+export const getCommentsByPost = async (postId) => list(await unwrap(supabase.from(tables.comments).select('*').eq('postId', postId).order('createdAt', { ascending: true })));
 
-// ============================================
-// USER SERVICES
-// ============================================
+// SCHOLARSHIPS
+export const createScholarship = async (data) => unwrap(supabase.from(tables.scholarships).insert({ ...data, createdAt: now(), updatedAt: now() }).select().single());
+export const getAllScholarships = async (filters = {}) => { let q = supabase.from(tables.scholarships).select('*').order('deadline', { ascending: true }); if (filters.country) q = q.eq('country', filters.country); if (filters.category) q = q.eq('category', filters.category); return list(await unwrap(q)); };
+export const getScholarshipById = async (id) => { const data = await unwrap(supabase.from(tables.scholarships).select('*').eq('id', id).maybeSingle()); return data ? { id: data.id, ...data } : null; };
+export const updateScholarship = async (id, data) => unwrap(supabase.from(tables.scholarships).update({ ...data, updatedAt: now() }).eq('id', id));
+export const deleteScholarship = async (id) => unwrap(supabase.from(tables.scholarships).delete().eq('id', id));
 
-export const getUserById = async (uid) => {
-  try {
-    const q = query(usersCollection, where('uid', '==', uid));
-    const snapshot = await getDocs(q);
-    if (!snapshot.empty) {
-      return { id: snapshot.docs[0].id, ...snapshot.docs[0].data() };
-    }
-    return null;
-  } catch (error) {
-    console.error('Get user error:', error);
-    throw error;
-  }
-};
+// COURSES
+export const createCourse = async (data) => unwrap(supabase.from(tables.courses).insert({ ...data, createdAt: now(), updatedAt: now() }).select().single());
+export const getAllCourses = async (category = null) => { let q = supabase.from(tables.courses).select('*').order('createdAt', { ascending: false }); if (category) q = q.eq('category', category); return list(await unwrap(q)); };
+export const updateCourse = async (id, data) => unwrap(supabase.from(tables.courses).update({ ...data, updatedAt: now() }).eq('id', id));
+export const deleteCourse = async (id) => unwrap(supabase.from(tables.courses).delete().eq('id', id));
 
-export const updateUserProfile = async (userId, data) => {
-  try {
-    const q = query(usersCollection, where('uid', '==', userId));
-    const snapshot = await getDocs(q);
-    if (!snapshot.empty) {
-      const userDocRef = doc(db, 'users', snapshot.docs[0].id);
-      await updateDoc(userDocRef, {
-        ...data,
-        updatedAt: serverTimestamp()
-      });
-    }
-  } catch (error) {
-    console.error('Update user error:', error);
-    throw error;
-  }
-};
+// HELP REQUESTS
+export const createHelpRequest = async (data) => unwrap(supabase.from(tables.helpRequests).insert({ ...data, status: 'pending', adminReply: null, createdAt: now(), updatedAt: now() }).select().single());
+export const getHelpRequests = async (status = null) => { let q = supabase.from(tables.helpRequests).select('*').order('createdAt', { ascending: false }); if (status) q = q.eq('status', status); return list(await unwrap(q)); };
+export const replyToHelpRequest = async (id, reply) => unwrap(supabase.from(tables.helpRequests).update({ adminReply: reply, status: 'resolved', updatedAt: now() }).eq('id', id));
+export const updateHelpRequestStatus = async (id, status) => unwrap(supabase.from(tables.helpRequests).update({ status, updatedAt: now() }).eq('id', id));
 
-export const getAllUsers = async () => {
-  try {
-    const snapshot = await getDocs(query(usersCollection, orderBy('createdAt', 'desc')));
-    return snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
-  } catch (error) {
-    console.error('Get all users error:', error);
-    throw error;
-  }
-};
+// DONATIONS
+export const createDonationRequest = async (data) => unwrap(supabase.from(tables.donations).insert({ ...data, status: 'pending', totalRaised: 0, donors: [], createdAt: now(), updatedAt: now() }).select().single());
+export const getDonationRequests = async (status = null) => { let q = supabase.from(tables.donations).select('*').order('createdAt', { ascending: false }); if (status) q = q.eq('status', status); return list(await unwrap(q)); };
+export const approveDonationRequest = async (id) => unwrap(supabase.from(tables.donations).update({ status: 'approved', updatedAt: now() }).eq('id', id));
+export const rejectDonationRequest = async (id) => unwrap(supabase.from(tables.donations).update({ status: 'rejected', updatedAt: now() }).eq('id', id));
+export const recordDonation = async (id, donorData) => { const donation = await unwrap(supabase.from(tables.donations).select('totalRaised,donors').eq('id', id).single()); const donors = Array.isArray(donation.donors) ? donation.donors : []; donors.push({ ...donorData, timestamp: now() }); return unwrap(supabase.from(tables.donations).update({ totalRaised: (donation.totalRaised || 0) + Number(donorData.amount || 0), donors, updatedAt: now() }).eq('id', id)); };
 
-export const updateUserRole = async (userId, role) => {
-  try {
-    const q = query(usersCollection, where('uid', '==', userId));
-    const snapshot = await getDocs(q);
-    if (!snapshot.empty) {
-      const userDocRef = doc(db, 'users', snapshot.docs[0].id);
-      await updateDoc(userDocRef, { role, updatedAt: serverTimestamp() });
-    }
-  } catch (error) {
-    console.error('Update role error:', error);
-    throw error;
-  }
-};
+// GOVERNMENT WORKS
+export const createGovtWork = async (data) => unwrap(supabase.from(tables.govtWorks).insert({ ...data, createdAt: now(), updatedAt: now() }).select().single());
+export const getAllGovtWorks = async (status = null) => { let q = supabase.from(tables.govtWorks).select('*').order('createdAt', { ascending: false }); if (status) q = q.eq('status', status); return list(await unwrap(q)); };
+export const updateGovtWork = async (id, data) => unwrap(supabase.from(tables.govtWorks).update({ ...data, updatedAt: now() }).eq('id', id));
+export const deleteGovtWork = async (id) => unwrap(supabase.from(tables.govtWorks).delete().eq('id', id));
 
-export const toggleUserActive = async (userId, isActive) => {
-  try {
-    const q = query(usersCollection, where('uid', '==', userId));
-    const snapshot = await getDocs(q);
-    if (!snapshot.empty) {
-      const userDocRef = doc(db, 'users', snapshot.docs[0].id);
-      await updateDoc(userDocRef, { isActive, updatedAt: serverTimestamp() });
-    }
-  } catch (error) {
-    console.error('Toggle active error:', error);
-    throw error;
-  }
-};
+// GOVERNMENT ISSUES
+export const reportGovtIssue = async (data) => unwrap(supabase.from(tables.govtIssues).insert({ ...data, status: 'reported', createdAt: now(), updatedAt: now() }).select().single());
+export const getGovtIssues = async (status = null) => { let q = supabase.from(tables.govtIssues).select('*').order('createdAt', { ascending: false }); if (status) q = q.eq('status', status); return list(await unwrap(q)); };
 
-// ============================================
-// POST SERVICES
-// ============================================
+// NOTIFICATIONS
+export const createNotification = async (data) => unwrap(supabase.from(tables.notifications).insert({ ...data, read: false, createdAt: now() }).select().single());
+export const getUserNotifications = async (uid) => list(await unwrap(supabase.from(tables.notifications).select('*').eq('userId', uid).order('createdAt', { ascending: false }).limit(50)));
+export const markNotificationRead = async (id) => unwrap(supabase.from(tables.notifications).update({ read: true }).eq('id', id));
+export const markAllNotificationsRead = async (uid) => unwrap(supabase.from(tables.notifications).update({ read: true }).eq('userId', uid).eq('read', false));
+export const getUnreadCount = async (uid) => { const { count, error } = await supabase.from(tables.notifications).select('id', { count: 'exact', head: true }).eq('userId', uid).eq('read', false); if (error) return 0; return count || 0; };
 
-export const createPost = async (postData) => {
-  try {
-    const post = await addDoc(postsCollection, {
-      ...postData,
-      likes: [],
-      likeCount: 0,
-      commentCount: 0,
-      status: 'pending',
-      createdAt: serverTimestamp(),
-      updatedAt: serverTimestamp()
-    });
-    return post;
-  } catch (error) {
-    console.error('Create post error:', error);
-    throw error;
-  }
-};
+// REALTIME
+const subscribeAndRefresh = (table, filter, loader, callback, channelName) => { let active = true; const refresh = async () => { if (!active) return; try { callback(await loader()); } catch (e) { console.error(`Realtime ${table} refresh failed:`, e); } }; refresh(); const channel = supabase.channel(channelName).on('postgres_changes', { event: '*', schema: 'public', table, ...(filter ? { filter } : {}) }, refresh).subscribe(); return () => { active = false; supabase.removeChannel(channel); }; };
+export const subscribeToPosts = (callback) => subscribeAndRefresh(tables.posts, 'status=eq.approved', () => getAllPosts(), callback, 'public-posts');
+export const subscribeToNotifications = (uid, callback) => subscribeAndRefresh(tables.notifications, `userId=eq.${uid}`, () => getUserNotifications(uid), callback, `user-notifications-${uid}`);
 
-export const getAllPosts = async (category = null) => {
-  try {
-    let q;
-    if (category) {
-      q = query(
-        postsCollection, 
-        where('status', '==', 'approved'),
-        where('category', '==', category),
-        orderBy('createdAt', 'desc')
-      );
-    } else {
-      q = query(
-        postsCollection, 
-        where('status', '==', 'approved'),
-        orderBy('createdAt', 'desc')
-      );
-    }
-    const snapshot = await getDocs(q);
-    return snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
-  } catch (error) {
-    console.error('Get posts error:', error);
-    throw error;
-  }
-};
+// STORAGE
+export const uploadFile = async (bucket, path, file, options = {}) => { const { data, error } = await supabase.storage.from(bucket).upload(path, file, { upsert: true, ...options }); if (error) throw error; return data; };
+export const getFileUrl = (bucket, path) => supabase.storage.from(bucket).getPublicUrl(path).data.publicUrl;
+export const deleteFile = async (bucket, path) => { const { error } = await supabase.storage.from(bucket).remove([path]); if (error) throw error; };
 
-export const getPendingPosts = async () => {
-  try {
-    const snapshot = await getDocs(query(
-      postsCollection, 
-      where('status', '==', 'pending'),
-      orderBy('createdAt', 'desc')
-    ));
-    return snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
-  } catch (error) {
-    console.error('Get pending posts error:', error);
-    throw error;
-  }
-};
-
-export const approvePost = async (postId) => {
-  try {
-    const postRef = doc(db, 'posts', postId);
-    await updateDoc(postRef, { status: 'approved', updatedAt: serverTimestamp() });
-  } catch (error) {
-    console.error('Approve post error:', error);
-    throw error;
-  }
-};
-
-export const rejectPost = async (postId) => {
-  try {
-    const postRef = doc(db, 'posts', postId);
-    await updateDoc(postRef, { status: 'rejected', updatedAt: serverTimestamp() });
-  } catch (error) {
-    console.error('Reject post error:', error);
-    throw error;
-  }
-};
-
-export const deletePost = async (postId) => {
-  try {
-    await deleteDoc(doc(db, 'posts', postId));
-  } catch (error) {
-    console.error('Delete post error:', error);
-    throw error;
-  }
-};
-
-export const likePost = async (postId, userId) => {
-  try {
-    const postRef = doc(db, 'posts', postId);
-    await updateDoc(postRef, {
-      likes: arrayUnion(userId),
-      likeCount: increment(1),
-      updatedAt: serverTimestamp()
-    });
-  } catch (error) {
-    console.error('Like post error:', error);
-    throw error;
-  }
-};
-
-export const unlikePost = async (postId, userId) => {
-  try {
-    const postRef = doc(db, 'posts', postId);
-    await updateDoc(postRef, {
-      likes: arrayRemove(userId),
-      likeCount: increment(-1),
-      updatedAt: serverTimestamp()
-    });
-  } catch (error) {
-    console.error('Unlike post error:', error);
-    throw error;
-  }
-};
-
-// ============================================
-// COMMENT SERVICES
-// ============================================
-
-export const addComment = async (postId, commentData) => {
-  try {
-    const comment = await addDoc(commentsCollection, {
-      ...commentData,
-      postId,
-      createdAt: serverTimestamp()
-    });
-    
-    // Update post comment count
-    const postRef = doc(db, 'posts', postId);
-    await updateDoc(postRef, {
-      commentCount: increment(1),
-      updatedAt: serverTimestamp()
-    });
-    
-    return comment;
-  } catch (error) {
-    console.error('Add comment error:', error);
-    throw error;
-  }
-};
-
-export const getCommentsByPost = async (postId) => {
-  try {
-    const snapshot = await getDocs(query(
-      commentsCollection,
-      where('postId', '==', postId),
-      orderBy('createdAt', 'asc')
-    ));
-    return snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
-  } catch (error) {
-    console.error('Get comments error:', error);
-    throw error;
-  }
-};
-
-// ============================================
-// SCHOLARSHIP SERVICES
-// ============================================
-
-export const createScholarship = async (scholarshipData) => {
-  try {
-    const scholarship = await addDoc(scholarshipsCollection, {
-      ...scholarshipData,
-      createdAt: serverTimestamp(),
-      updatedAt: serverTimestamp()
-    });
-    return scholarship;
-  } catch (error) {
-    console.error('Create scholarship error:', error);
-    throw error;
-  }
-};
-
-export const getAllScholarships = async (filters = {}) => {
-  try {
-    let q = query(scholarshipsCollection, orderBy('deadline', 'asc'));
-    
-    if (filters.country) {
-      q = query(scholarshipsCollection, 
-        where('country', '==', filters.country),
-        orderBy('deadline', 'asc')
-      );
-    }
-    
-    if (filters.category) {
-      q = query(scholarshipsCollection, 
-        where('category', '==', filters.category),
-        orderBy('deadline', 'asc')
-      );
-    }
-    
-    const snapshot = await getDocs(q);
-    return snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
-  } catch (error) {
-    console.error('Get scholarships error:', error);
-    throw error;
-  }
-};
-
-export const getScholarshipById = async (id) => {
-  try {
-    const docRef = doc(db, 'scholarships', id);
-    const docSnap = await getDoc(docRef);
-    if (docSnap.exists()) {
-      return { id: docSnap.id, ...docSnap.data() };
-    }
-    return null;
-  } catch (error) {
-    console.error('Get scholarship error:', error);
-    throw error;
-  }
-};
-
-export const updateScholarship = async (id, data) => {
-  try {
-    const scholarshipRef = doc(db, 'scholarships', id);
-    await updateDoc(scholarshipRef, { ...data, updatedAt: serverTimestamp() });
-  } catch (error) {
-    console.error('Update scholarship error:', error);
-    throw error;
-  }
-};
-
-export const deleteScholarship = async (id) => {
-  try {
-    await deleteDoc(doc(db, 'scholarships', id));
-  } catch (error) {
-    console.error('Delete scholarship error:', error);
-    throw error;
-  }
-};
-
-// ============================================
-// COURSE SERVICES
-// ============================================
-
-export const createCourse = async (courseData) => {
-  try {
-    const course = await addDoc(coursesCollection, {
-      ...courseData,
-      createdAt: serverTimestamp(),
-      updatedAt: serverTimestamp()
-    });
-    return course;
-  } catch (error) {
-    console.error('Create course error:', error);
-    throw error;
-  }
-};
-
-export const getAllCourses = async (category = null) => {
-  try {
-    let q;
-    if (category) {
-      q = query(coursesCollection, where('category', '==', category));
-    } else {
-      q = query(coursesCollection, orderBy('createdAt', 'desc'));
-    }
-    const snapshot = await getDocs(q);
-    return snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
-  } catch (error) {
-    console.error('Get courses error:', error);
-    throw error;
-  }
-};
-
-export const updateCourse = async (id, data) => {
-  try {
-    const courseRef = doc(db, 'courses', id);
-    await updateDoc(courseRef, { ...data, updatedAt: serverTimestamp() });
-  } catch (error) {
-    console.error('Update course error:', error);
-    throw error;
-  }
-};
-
-export const deleteCourse = async (id) => {
-  try {
-    await deleteDoc(doc(db, 'courses', id));
-  } catch (error) {
-    console.error('Delete course error:', error);
-    throw error;
-  }
-};
-
-// ============================================
-// HELP REQUEST SERVICES
-// ============================================
-
-export const createHelpRequest = async (requestData) => {
-  try {
-    const request = await addDoc(helpRequestsCollection, {
-      ...requestData,
-      status: 'pending',
-      adminReply: null,
-      createdAt: serverTimestamp(),
-      updatedAt: serverTimestamp()
-    });
-    return request;
-  } catch (error) {
-    console.error('Create help request error:', error);
-    throw error;
-  }
-};
-
-export const getHelpRequests = async (status = null) => {
-  try {
-    let q;
-    if (status) {
-      q = query(helpRequestsCollection, where('status', '==', status), orderBy('createdAt', 'desc'));
-    } else {
-      q = query(helpRequestsCollection, orderBy('createdAt', 'desc'));
-    }
-    const snapshot = await getDocs(q);
-    return snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
-  } catch (error) {
-    console.error('Get help requests error:', error);
-    throw error;
-  }
-};
-
-export const replyToHelpRequest = async (requestId, reply) => {
-  try {
-    const requestRef = doc(db, 'helpRequests', requestId);
-    await updateDoc(requestRef, {
-      adminReply: reply,
-      status: 'resolved',
-      updatedAt: serverTimestamp()
-    });
-  } catch (error) {
-    console.error('Reply to help request error:', error);
-    throw error;
-  }
-};
-
-export const updateHelpRequestStatus = async (requestId, status) => {
-  try {
-    const requestRef = doc(db, 'helpRequests', requestId);
-    await updateDoc(requestRef, { status, updatedAt: serverTimestamp() });
-  } catch (error) {
-    console.error('Update help request status error:', error);
-    throw error;
-  }
-};
-
-// ============================================
-// DONATION SERVICES
-// ============================================
-
-export const createDonationRequest = async (donationData) => {
-  try {
-    const donation = await addDoc(donationsCollection, {
-      ...donationData,
-      status: 'pending',
-      totalRaised: 0,
-      donors: [],
-      createdAt: serverTimestamp(),
-      updatedAt: serverTimestamp()
-    });
-    return donation;
-  } catch (error) {
-    console.error('Create donation request error:', error);
-    throw error;
-  }
-};
-
-export const getDonationRequests = async (status = null) => {
-  try {
-    let q;
-    if (status) {
-      q = query(donationsCollection, where('status', '==', status), orderBy('createdAt', 'desc'));
-    } else {
-      q = query(donationsCollection, orderBy('createdAt', 'desc'));
-    }
-    const snapshot = await getDocs(q);
-    return snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
-  } catch (error) {
-    console.error('Get donation requests error:', error);
-    throw error;
-  }
-};
-
-export const approveDonationRequest = async (donationId) => {
-  try {
-    const donationRef = doc(db, 'donations', donationId);
-    await updateDoc(donationRef, { status: 'approved', updatedAt: serverTimestamp() });
-  } catch (error) {
-    console.error('Approve donation error:', error);
-    throw error;
-  }
-};
-
-export const rejectDonationRequest = async (donationId) => {
-  try {
-    const donationRef = doc(db, 'donations', donationId);
-    await updateDoc(donationRef, { status: 'rejected', updatedAt: serverTimestamp() });
-  } catch (error) {
-    console.error('Reject donation error:', error);
-    throw error;
-  }
-};
-
-export const recordDonation = async (donationId, donorData) => {
-  try {
-    const donationRef = doc(db, 'donations', donationId);
-    await updateDoc(donationRef, {
-      totalRaised: increment(donorData.amount),
-      donors: arrayUnion({
-        uid: donorData.uid,
-        name: donorData.name,
-        amount: donorData.amount,
-        message: donorData.message,
-        timestamp: serverTimestamp()
-      }),
-      updatedAt: serverTimestamp()
-    });
-  } catch (error) {
-    console.error('Record donation error:', error);
-    throw error;
-  }
-};
-
-// ============================================
-// GOVERNMENT WORK SERVICES
-// ============================================
-
-export const createGovtWork = async (workData) => {
-  try {
-    const work = await addDoc(govtWorksCollection, {
-      ...workData,
-      createdAt: serverTimestamp(),
-      updatedAt: serverTimestamp()
-    });
-    return work;
-  } catch (error) {
-    console.error('Create govt work error:', error);
-    throw error;
-  }
-};
-
-export const getAllGovtWorks = async (status = null) => {
-  try {
-    let q;
-    if (status) {
-      q = query(govtWorksCollection, where('status', '==', status), orderBy('createdAt', 'desc'));
-    } else {
-      q = query(govtWorksCollection, orderBy('createdAt', 'desc'));
-    }
-    const snapshot = await getDocs(q);
-    return snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
-  } catch (error) {
-    console.error('Get govt works error:', error);
-    throw error;
-  }
-};
-
-export const updateGovtWork = async (id, data) => {
-  try {
-    const workRef = doc(db, 'govtWorks', id);
-    await updateDoc(workRef, { ...data, updatedAt: serverTimestamp() });
-  } catch (error) {
-    console.error('Update govt work error:', error);
-    throw error;
-  }
-};
-
-export const deleteGovtWork = async (id) => {
-  try {
-    await deleteDoc(doc(db, 'govtWorks', id));
-  } catch (error) {
-    console.error('Delete govt work error:', error);
-    throw error;
-  }
-};
-
-// ============================================
-// GOVERNMENT ISSUE SERVICES
-// ============================================
-
-export const reportGovtIssue = async (issueData) => {
-  try {
-    const issue = await addDoc(govtIssuesCollection, {
-      ...issueData,
-      status: 'reported',
-      createdAt: serverTimestamp(),
-      updatedAt: serverTimestamp()
-    });
-    return issue;
-  } catch (error) {
-    console.error('Report govt issue error:', error);
-    throw error;
-  }
-};
-
-export const getGovtIssues = async (status = null) => {
-  try {
-    let q;
-    if (status) {
-      q = query(govtIssuesCollection, where('status', '==', status), orderBy('createdAt', 'desc'));
-    } else {
-      q = query(govtIssuesCollection, orderBy('createdAt', 'desc'));
-    }
-    const snapshot = await getDocs(q);
-    return snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
-  } catch (error) {
-    console.error('Get govt issues error:', error);
-    throw error;
-  }
-};
-
-// ============================================
-// NOTIFICATION SERVICES
-// ============================================
-
-export const createNotification = async (notificationData) => {
-  try {
-    const notification = await addDoc(notificationsCollection, {
-      ...notificationData,
-      read: false,
-      createdAt: serverTimestamp()
-    });
-    return notification;
-  } catch (error) {
-    console.error('Create notification error:', error);
-    throw error;
-  }
-};
-
-export const getUserNotifications = async (userId) => {
-  try {
-    const snapshot = await getDocs(query(
-      notificationsCollection,
-      where('userId', '==', userId),
-      orderBy('createdAt', 'desc'),
-      limit(50)
-    ));
-    return snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
-  } catch (error) {
-    console.error('Get user notifications error:', error);
-    throw error;
-  }
-};
-
-export const markNotificationRead = async (notificationId) => {
-  try {
-    const notifRef = doc(db, 'notifications', notificationId);
-    await updateDoc(notifRef, { read: true });
-  } catch (error) {
-    console.error('Mark notification read error:', error);
-    throw error;
-  }
-};
-
-export const markAllNotificationsRead = async (userId) => {
-  try {
-    const snapshot = await getDocs(query(
-      notificationsCollection,
-      where('userId', '==', userId),
-      where('read', '==', false)
-    ));
-    const batch = [];
-    snapshot.docs.forEach(docSnap => {
-      batch.push(updateDoc(doc(db, 'notifications', docSnap.id), { read: true }));
-    });
-    await Promise.all(batch);
-  } catch (error) {
-    console.error('Mark all notifications read error:', error);
-    throw error;
-  }
-};
-
-export const getUnreadCount = async (userId) => {
-  try {
-    const snapshot = await getDocs(query(
-      notificationsCollection,
-      where('userId', '==', userId),
-      where('read', '==', false)
-    ));
-    return snapshot.size;
-  } catch (error) {
-    console.error('Get unread count error:', error);
-    return 0;
-  }
-};
-
-// ============================================
-// REAL-TIME LISTENERS
-// ============================================
-
-export const subscribeToPosts = (callback) => {
-  const q = query(
-    postsCollection,
-    where('status', '==', 'approved'),
-    orderBy('createdAt', 'desc'),
-    limit(50)
-  );
-  return onSnapshot(q, (snapshot) => {
-    const posts = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
-    callback(posts);
-  });
-};
-
-export const subscribeToNotifications = (userId, callback) => {
-  const q = query(
-    notificationsCollection,
-    where('userId', '==', userId),
-    orderBy('createdAt', 'desc'),
-    limit(50)
-  );
-  return onSnapshot(q, (snapshot) => {
-    const notifications = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
-    callback(notifications);
-  });
-};
-
-export default {
-  // Auth
-  registerUser,
-  loginUser,
-  logoutUser,
-  resetPassword,
-  onAuthStateChange,
-  
-  // Users
-  getUserById,
-  updateUserProfile,
-  getAllUsers,
-  updateUserRole,
-  toggleUserActive,
-  
-  // Posts
-  createPost,
-  getAllPosts,
-  getPendingPosts,
-  approvePost,
-  rejectPost,
-  deletePost,
-  likePost,
-  unlikePost,
-  
-  // Comments
-  addComment,
-  getCommentsByPost,
-  
-  // Scholarships
-  createScholarship,
-  getAllScholarships,
-  getScholarshipById,
-  updateScholarship,
-  deleteScholarship,
-  
-  // Courses
-  createCourse,
-  getAllCourses,
-  updateCourse,
-  deleteCourse,
-  
-  // Help Requests
-  createHelpRequest,
-  getHelpRequests,
-  replyToHelpRequest,
-  updateHelpRequestStatus,
-  
-  // Donations
-  createDonationRequest,
-  getDonationRequests,
-  approveDonationRequest,
-  rejectDonationRequest,
-  recordDonation,
-  
-  // Govt Works
-  createGovtWork,
-  getAllGovtWorks,
-  updateGovtWork,
-  deleteGovtWork,
-  
-  // Govt Issues
-  reportGovtIssue,
-  getGovtIssues,
-  
-  // Notifications
-  createNotification,
-  getUserNotifications,
-  markNotificationRead,
-  markAllNotificationsRead,
-  getUnreadCount,
-  
-  // Real-time
-  subscribeToPosts,
-  subscribeToNotifications
-};
+export default { supabase, registerUser, loginUser, logoutUser, resetPassword, onAuthStateChange, getUserById, updateUserProfile, getAllUsers, updateUserRole, toggleUserActive, createPost, getAllPosts, getPendingPosts, approvePost, rejectPost, deletePost, likePost, unlikePost, addComment, getCommentsByPost, createScholarship, getAllScholarships, getScholarshipById, updateScholarship, deleteScholarship, createCourse, getAllCourses, updateCourse, deleteCourse, createHelpRequest, getHelpRequests, replyToHelpRequest, updateHelpRequestStatus, createDonationRequest, getDonationRequests, approveDonationRequest, rejectDonationRequest, recordDonation, createGovtWork, getAllGovtWorks, updateGovtWork, deleteGovtWork, reportGovtIssue, getGovtIssues, createNotification, getUserNotifications, markNotificationRead, markAllNotificationsRead, getUnreadCount, subscribeToPosts, subscribeToNotifications, uploadFile, getFileUrl, deleteFile };
