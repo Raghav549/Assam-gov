@@ -8,23 +8,19 @@ function isEmail(email) {
   return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email);
 }
 
-async function sendOtp(email) {
-  const { data, error } = await supabaseAdmin.auth.signInWithOtp({
-    email,
-    options: {
-      shouldCreateUser: true
-    }
-  });
-  if (error) throw error;
-  return data;
-}
-
 exports.sendOtp = async (req, res, next) => {
   try {
     const email = normalizeEmail(req.body.email);
-    if (!isEmail(email)) return res.status(400).json({ ok: false, message: 'Valid email is required' });
+    if (!isEmail(email)) {
+      return res.status(400).json({ ok: false, message: 'Valid email is required' });
+    }
 
-    await sendOtp(email);
+    const { error } = await supabaseAdmin.auth.signInWithOtp({
+      email,
+      options: { shouldCreateUser: true }
+    });
+
+    if (error) throw error;
     res.json({ ok: true, message: 'OTP sent successfully to your email' });
   } catch (error) {
     next(error);
@@ -35,14 +31,19 @@ exports.verifyOtp = async (req, res, next) => {
   try {
     const email = normalizeEmail(req.body.email);
     const otp = String(req.body.otp || '').trim();
-    if (!isEmail(email)) return res.status(400).json({ ok: false, message: 'Valid email is required' });
-    if (!/^\d{6}$/.test(otp)) return res.status(400).json({ ok: false, message: 'Valid 6 digit OTP is required' });
+    if (!isEmail(email)) {
+      return res.status(400).json({ ok: false, message: 'Valid email is required' });
+    }
+    if (!/^\d{6}$/.test(otp)) {
+      return res.status(400).json({ ok: false, message: 'Valid 6 digit OTP is required' });
+    }
 
     const { data, error } = await supabaseAdmin.auth.verifyOtp({
       email,
       token: otp,
       type: 'email'
     });
+
     if (error) throw error;
 
     res.json({
