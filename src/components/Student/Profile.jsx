@@ -6,7 +6,7 @@ import React, { useState } from 'react';
 import { useAuth } from '../../context/AuthContext';
 import { updateUserProfile } from '../../services/firebase';
 import { uploadImage } from '../../services/storageService';
-import { FiCamera, FiSave, FiUser, FiMail, FiPhone, FiMapPin } from 'react-icons/fi';
+import { FiCamera, FiMail, FiPhone, FiMapPin } from 'react-icons/fi';
 import toast from 'react-hot-toast';
 
 const Profile = () => {
@@ -26,7 +26,6 @@ const Profile = () => {
     const file = e.target.files[0];
     if (file) {
       setImageFile(file);
-      // Preview locally
       const reader = new FileReader();
       reader.onloadend = () => {
         setFormData(prev => ({ ...prev, profilePicture: reader.result }));
@@ -36,10 +35,11 @@ const Profile = () => {
   };
 
   const handleSave = async () => {
+    if (!user?.uid) return;
     setSaving(true);
     try {
       let photoURL = formData.profilePicture;
-      
+
       if (imageFile) {
         photoURL = await uploadImage(imageFile, 'profiles');
       }
@@ -52,15 +52,13 @@ const Profile = () => {
         profilePicture: photoURL
       });
 
-      // Update Firebase Auth Profile as well
-      import('firebase/auth').then(({ updateProfile }) => {
-        updateProfile(user, { displayName: formData.displayName, photoURL });
-      });
-
+      // Supabase is now the single authentication/profile backend.
+      // Do not dynamically import Firebase here: Firebase has been removed.
       toast.success('Profile updated successfully');
       setIsEditing(false);
     } catch (error) {
-      toast.error('Failed to update profile');
+      console.error('Profile update error:', error);
+      toast.error(error?.message || 'Failed to update profile');
     } finally {
       setSaving(false);
     }
@@ -74,10 +72,8 @@ const Profile = () => {
     <div className="min-h-screen bg-gray-50 py-8">
       <div className="container mx-auto px-4 max-w-3xl">
         <div className="bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden">
-          
-          {/* Cover Image */}
           <div className="h-32 bg-gradient-to-r from-green-500 to-blue-600"></div>
-          
+
           <div className="px-8 pb-8">
             <div className="relative -mt-16 mb-6 flex justify-between items-end">
               <div className="relative">
@@ -97,12 +93,12 @@ const Profile = () => {
                   </label>
                 )}
               </div>
-              
+
               <button
                 onClick={() => isEditing ? handleSave() : setIsEditing(true)}
                 className={`px-6 py-2 rounded-lg font-medium transition-colors ${
-                  isEditing 
-                    ? 'bg-green-600 text-white hover:bg-green-700' 
+                  isEditing
+                    ? 'bg-green-600 text-white hover:bg-green-700'
                     : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
                 }`}
                 disabled={saving}
@@ -130,7 +126,7 @@ const Profile = () => {
                 <label className="block text-sm font-medium text-gray-500 mb-1">Email</label>
                 <div className="flex items-center text-gray-900">
                   <FiMail className="w-4 h-4 mr-2 text-gray-400" />
-                  {user.email}
+                  {user?.email}
                 </div>
               </div>
 
