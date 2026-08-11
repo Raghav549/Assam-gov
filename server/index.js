@@ -3,7 +3,6 @@ const express = require('express');
 const cors = require('cors');
 const helmet = require('helmet');
 const rateLimit = require('express-rate-limit');
-const mongoose = require('mongoose');
 const path = require('path');
 const otpRoutes = require('./routes/otpRoutes');
 
@@ -17,34 +16,12 @@ app.use(express.json({ limit: '2mb' }));
 app.use(express.urlencoded({ extended: true }));
 app.use(rateLimit({ windowMs: 15 * 60 * 1000, max: 300, standardHeaders: true, legacyHeaders: false }));
 
-let mongoReady = false;
-
-async function connectDatabase() {
-  if (!process.env.MONGODB_URI) {
-    console.log('MONGODB_URI not found. Server will run without database-backed OTP storage.');
-    return;
-  }
-  try {
-    await mongoose.connect(process.env.MONGODB_URI);
-    mongoReady = true;
-    console.log('MongoDB connected');
-  } catch (error) {
-    mongoReady = false;
-    console.error('MongoDB connection failed:', error.message);
-  }
-}
-
-app.use((req, res, next) => {
-  req.mongoReady = mongoReady;
-  next();
-});
-
 app.get('/', (req, res) => {
   res.json({ ok: true, name: 'Youth Assam Backend', status: 'running' });
 });
 
 app.get('/api/health', (req, res) => {
-  res.json({ ok: true, database: mongoReady ? 'connected' : 'not-connected', time: new Date().toISOString() });
+  res.json({ ok: true, database: 'supabase', time: new Date().toISOString() });
 });
 
 app.use('/api/otp', otpRoutes);
@@ -68,6 +45,4 @@ app.use((error, req, res, next) => {
   res.status(error.status || 500).json({ ok: false, message: error.message || 'Internal server error' });
 });
 
-connectDatabase().finally(() => {
-  app.listen(PORT, () => console.log(`Server running on port ${PORT}`));
-});
+app.listen(PORT, () => console.log(`Server running on port ${PORT}`));
