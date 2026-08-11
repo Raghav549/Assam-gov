@@ -3,15 +3,15 @@
 // ============================================
 
 import React, { createContext, useState, useEffect, useContext } from 'react';
-import { 
-  onAuthStateChange, 
-  getUserById, 
-  registerUser, 
-  loginUser, 
+import {
+  onAuthStateChange,
+  getUserById,
+  registerUser,
+  loginUser,
   logoutUser,
   resetPassword
 } from '../services/firebase';
-import { sendOTP, verifyOTP } from '../services/emailService';
+import { sendOTP, verifyOTP, resendOTP } from '../services/emailService';
 import toast from 'react-hot-toast';
 
 const AuthContext = createContext(null);
@@ -25,13 +25,12 @@ export const useAuth = () => {
 };
 
 export const AuthProvider = ({ children }) => {
-  const [user, setUser] = useState(null); // Firebase User Object
-  const [userData, setUserData] = useState(null); // Firestore User Data
+  const [user, setUser] = useState(null);
+  const [userData, setUserData] = useState(null);
   const [loading, setLoading] = useState(true);
   const [otpSent, setOtpSent] = useState(false);
   const [pendingEmail, setPendingEmail] = useState(null);
 
-  // Listen for auth state changes
   useEffect(() => {
     const unsubscribe = onAuthStateChange(async (firebaseUser) => {
       if (firebaseUser) {
@@ -40,7 +39,7 @@ export const AuthProvider = ({ children }) => {
           const data = await getUserById(firebaseUser.uid);
           setUserData(data);
         } catch (error) {
-          console.error("Error fetching user ", error);
+          console.error('Error fetching user', error);
         }
       } else {
         setUser(null);
@@ -52,51 +51,67 @@ export const AuthProvider = ({ children }) => {
     return () => unsubscribe();
   }, []);
 
-  // Handle Registration with OTP
+  // Send OTP. Only move to the OTP screen after the backend confirms success.
   const signup = async (email, password, displayName) => {
     setLoading(true);
     try {
-      // 1. Send OTP first
-      await sendOTP(email);
+      const response = await sendOTP(email);
+
+      if (!response?.ok && !response?.success) {
+        throw new Error(response?.message || 'OTP could not be sent.');
+      }
+
       setPendingEmail(email);
       setOtpSent(true);
+      setLoading(false);
       toast.success('OTP sent to your email!');
       return { success: true, step: 'verify' };
     } catch (error) {
-      toast.error(error.message || 'Failed to send OTP');
       setLoading(false);
+      toast.error(error.message || 'Failed to send OTP');
       throw error;
     }
   };
 
-  // Verify OTP and Create Account
+  // Verify OTP first, then create the Firebase account.
   const verifyAndCreateAccount = async (email, otp, password, displayName) => {
     setLoading(true);
     try {
-      // 1. Verify OTP via Backend
       const response = await verifyOTP(email, otp);
-      
-      if (response.success) {
-        // 2. Create Firebase User
-        const firebaseUser = await registerUser(email, password, displayName);
-        
-        // Context updates automatically via listener
-        toast.success('Account created successfully!');
-        setOtpSent(false);
-        setPendingEmail(null);
-        setLoading(false);
-        return { success: true };
-      } else {
-        throw new Error(response.message || 'Invalid OTP');
+
+      // Backend returns { ok: true }, while older code expected { success: true }.
+      if (!response?.ok && !response?.success) {
+        throw new Error(response?.message || 'Invalid OTP');
       }
-    } catch (error) {
-      toast.error(error.message || 'Verification failed');
+
+      await registerUser(email, password, displayName);
+
+      setOtpSent(false);
+      setPendingEmail(null);
       setLoading(false);
+      toast.success('Account created successfully!');
+      return { success: true };
+    } catch (error) {
+      setLoading(false);
+      toast.error(error.message || 'Verification failed');
       throw error;
     }
   };
 
-  // Login
+  const resendSignupOTP = async (email) => {
+    try {
+      const response = await resendOTP(email);
+      if (!response?.ok && !response?.success) {
+        throw new Error(response?.message || 'OTP could not be resent.');
+      }
+      toast.success('New OTP sent to your email!');
+      return response;
+    } catch (error) {
+      toast.error(error.message || 'Failed to resend OTP');
+      throw error;
+    }
+  };
+
   const login = async (email, password) => {
     setLoading(true);
     try {
@@ -110,7 +125,6 @@ export const AuthProvider = ({ children }) => {
     }
   };
 
-  // Logout
   const logout = async () => {
     setLoading(true);
     try {
@@ -123,7 +137,6 @@ export const AuthProvider = ({ children }) => {
     }
   };
 
-  // Forgot Password
   const forgotPassword = async (email) => {
     try {
       await resetPassword(email);
@@ -140,6 +153,7 @@ export const AuthProvider = ({ children }) => {
     otpSent,
     pendingEmail,
     signup,
+    resendSignupOTP,
     verifyAndCreateAccount,
     login,
     logout,
