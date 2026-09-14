@@ -23,10 +23,17 @@ jobs:
           echo "Backend configured"
           echo "Test mailbox configured"
 
-      - name: Health check
+      - name: Health check with SMTP readiness wait
         run: |
-          curl --fail --silent --show-error "$BASE_URL/api/health" | tee health.json
-          node -e "const fs=require('fs'); const x=JSON.parse(fs.readFileSync('health.json')); if(!x.ok || x.auth!=='custom-jwt') process.exit(1); console.log(x)"
+          for i in $(seq 1 12); do
+            echo "Health attempt $i/12"
+            curl --fail --silent --show-error "$BASE_URL/api/health" | tee health.json || true
+            node -e "const fs=require('fs'); const p='health.json'; if(!fs.existsSync(p)) process.exit(1); const x=JSON.parse(fs.readFileSync(p)); console.log(x); if(x.ok && x.auth==='custom-jwt' && x.smtp==='ready') process.exit(0); process.exit(2)" && exit 0
+            sleep 10
+          done
+          echo "Render backend did not report smtp=ready within the wait window"
+          cat health.json
+          exit 1
 
       - name: Install IMAP test dependencies
         run: npm install --no-save imap mailparser
@@ -48,6 +55,7 @@ jobs:
           cat > read-otp.js <<'NODE'
           const Imap = require('imap');
           const { simpleParser } = require('mailparser');
+          const fs = require('fs');
           const mailbox = process.env.TEST_EMAIL;
           const password = process.env.TEST_EMAIL_APP_PASSWORD;
           const imap = new Imap({ user: mailbox, password, host: process.env.GMAIL_HOST, port: Number(process.env.GMAIL_PORT), tls: true, authTimeout: 15000 });
@@ -76,7 +84,7 @@ jobs:
                       const text=String(mail.text||'');
                       if(!/Youth Assam.*Email Verification OTP/i.test(subject) && !/verification OTP/i.test(text)) continue;
                       const m=(text+' '+String(mail.html||'')).match(/\b(\d{6})\b/);
-                      if(m){ require('fs').writeFileSync('otp.txt',m[1]); console.log('OTP received from real Gmail inbox'); imap.end(); return; }
+                      if(m){ fs.writeFileSync('otp.txt',m[1]); console.log('OTP received from real Gmail inbox'); imap.end(); return; }
                     } catch(e) {}
                   }
                   imap.closeBox(false, ()=>setTimeout(search, 5000));
