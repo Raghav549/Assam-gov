@@ -34,13 +34,13 @@ export const verifyOTP = async (email, otp) => {
 
 export const resendOTP = sendOTP;
 
-export const registerUser = async (email, password, displayName) => {
+export const registerUser = async (email, password, displayName, verificationToken) => {
   try {
     const response = await axios.post(`${API_BASE_URL}/auth/register`, {
       email,
       password,
       displayName,
-      emailVerified: true
+      verificationToken
     }, { timeout: 25000 });
     return response.data;
   } catch (error) {
