@@ -1,10 +1,12 @@
 const crypto = require('crypto');
+const jwt = require('jsonwebtoken');
 const { sendOtpEmail } = require('../mailer');
 
 const otpStore = new Map();
 const OTP_TTL_MS = 10 * 60 * 1000;
 const RESEND_COOLDOWN_MS = 30 * 1000;
 const MAX_ATTEMPTS = 5;
+const VERIFICATION_TTL_SECONDS = 10 * 60;
 
 function normalizeEmail(email) {
   return String(email || '').trim().toLowerCase();
@@ -20,6 +22,19 @@ function hashOtp(otp) {
 
 function generateOtp() {
   return String(crypto.randomInt(100000, 1000000));
+}
+
+function requireJwtSecret() {
+  if (!process.env.JWT_SECRET) throw new Error('JWT_SECRET is not configured on the backend.');
+  return process.env.JWT_SECRET;
+}
+
+function signVerificationToken(email) {
+  return jwt.sign(
+    { purpose: 'email_verification', email },
+    requireJwtSecret(),
+    { expiresIn: VERIFICATION_TTL_SECONDS }
+  );
 }
 
 exports.sendOtp = async (req, res, next) => {
@@ -83,7 +98,12 @@ exports.verifyOtp = async (req, res, next) => {
     }
 
     otpStore.delete(email);
-    return res.json({ ok: true, verified: true, message: 'Email verified successfully' });
+    return res.json({
+      ok: true,
+      verified: true,
+      verificationToken: signVerificationToken(email),
+      message: 'Email verified successfully'
+    });
   } catch (error) {
     next(error);
   }
