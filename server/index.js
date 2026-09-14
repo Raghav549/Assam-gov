@@ -5,6 +5,8 @@ const helmet = require('helmet');
 const rateLimit = require('express-rate-limit');
 const path = require('path');
 const otpRoutes = require('./routes/otpRoutes');
+const authRoutes = require('./routes/authRoutes');
+const { verifyMailer } = require('./mailer');
 
 const app = express();
 const PORT = process.env.PORT || 5000;
@@ -20,12 +22,19 @@ app.get('/', (req, res) => {
   res.json({ ok: true, name: 'Youth Assam Backend', status: 'running' });
 });
 
-app.get('/api/health', (req, res) => {
-  res.json({ ok: true, database: 'supabase', time: new Date().toISOString() });
+app.get('/api/health', async (req, res) => {
+  let smtp = 'unknown';
+  try {
+    await verifyMailer();
+    smtp = 'ready';
+  } catch (error) {
+    smtp = 'error';
+  }
+  res.json({ ok: true, database: 'supabase-data-only', auth: 'custom-jwt', smtp, time: new Date().toISOString() });
 });
 
 app.use('/api/otp', otpRoutes);
-app.use('/api/auth', otpRoutes);
+app.use('/api/auth', authRoutes);
 
 const buildPath = path.join(__dirname, '..', 'build');
 app.use(express.static(buildPath));
