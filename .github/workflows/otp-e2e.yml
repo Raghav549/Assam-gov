@@ -20,8 +20,10 @@ jobs:
           test -n "$BASE_URL"
           test -n "$TEST_EMAIL"
           test -n "$TEST_EMAIL_APP_PASSWORD"
+          test -n "${{ secrets.YOUTH_ASSAM_TEST_PASSWORD }}"
           echo "Backend configured"
           echo "Test mailbox configured"
+          echo "Signup password configured"
 
       - name: Health check with SMTP readiness wait
         run: |
@@ -124,4 +126,5 @@ jobs:
           node -e "const fs=require('fs'); const x=JSON.parse(fs.readFileSync('register.json')); if(!x.ok || !x.token || !x.user) process.exit(1); console.log('Verified account creation passed')"
 
       - name: Report success
-        run: echo "GREEN: SMTP -> real Gmail inbox -> OTP verify -> verified account creation passed."
+        run: |
+          echo "GREEN: SMTP -> real Gmail inbox -> OTP verify -> verified account creation passed."
