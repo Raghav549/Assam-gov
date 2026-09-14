@@ -1,0 +1,83 @@
+name: Youth Assam OTP E2E
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [main, 'fix/custom-otp-e2e']
+
+jobs:
+  otp-e2e:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    env:
+      BASE_URL: ${{ secrets.YOUTH_ASSAM_BACKEND_URL }}
+      TEST_EMAIL: ${{ secrets.YOUTH_ASSAM_TEST_EMAIL }}
+
+    steps:
+      - name: Validate required secrets
+        run: |
+          test -n "$BASE_URL"
+          test -n "$TEST_EMAIL"
+          echo "Backend: $BASE_URL"
+          echo "Test mailbox: $TEST_EMAIL"
+
+      - name: Health check
+        run: |
+          curl --fail --silent --show-error "$BASE_URL/api/health" | tee health.json
+          node -e "const fs=require('fs'); const x=JSON.parse(fs.readFileSync('health.json')); if(!x.ok || x.smtp!=='ready' || x.auth!=='custom-jwt') process.exit(1)"
+
+      - name: Send OTP
+        run: |
+          curl --fail --silent --show-error \
+            -X POST "$BASE_URL/api/otp/send" \
+            -H 'content-type: application/json' \
+            --data "{\"email\":\"$TEST_EMAIL\"}" \
+            | tee send.json
+          node -e "const fs=require('fs'); const x=JSON.parse(fs.readFileSync('send.json')); if(!x.ok) process.exit(1)"
+
+      - name: Verify OTP via mailbox API
+        env:
+          MAILBOX_API_URL: ${{ secrets.YOUTH_ASSAM_MAILBOX_API_URL }}
+          MAILBOX_API_TOKEN: ${{ secrets.YOUTH_ASSAM_MAILBOX_API_TOKEN }}
+        run: |
+          test -n "$MAILBOX_API_URL"
+          test -n "$MAILBOX_API_TOKEN"
+          curl --fail --silent --show-error \
+            -H "Authorization: Bearer $MAILBOX_API_TOKEN" \
+            "$MAILBOX_API_URL?to=$TEST_EMAIL" \
+            | tee mailbox.json
+          node - <<'NODE'
+          const fs=require('fs');
+          const x=JSON.parse(fs.readFileSync('mailbox.json'));
+          const text=JSON.stringify(x);
+          const m=text.match(/\b(\d{6})\b/);
+          if(!m) { console.error('No 6-digit OTP found in mailbox response'); process.exit(1); }
+          fs.writeFileSync('otp.txt', m[1]);
+          console.log('OTP received from mailbox API');
+          NODE
+
+      - name: Verify OTP
+        run: |
+          OTP=$(cat otp.txt)
+          curl --fail --silent --show-error \
+            -X POST "$BASE_URL/api/otp/verify" \
+            -H 'content-type: application/json' \
+            --data "{\"email\":\"$TEST_EMAIL\",\"otp\":\"$OTP\"}" \
+            | tee verify.json
+          node -e "const fs=require('fs'); const x=JSON.parse(fs.readFileSync('verify.json')); if(!x.ok || !x.verified) process.exit(1)"
+
+      - name: Signup with verified email
+        env:
+          PASSWORD: ${{ secrets.YOUTH_ASSAM_TEST_PASSWORD }}
+          DISPLAY_NAME: Youth Assam CI
+        run: |
+          test -n "$PASSWORD"
+          curl --fail --silent --show-error \
+            -X POST "$BASE_URL/api/auth/register" \
+            -H 'content-type: application/json' \
+            --data "{\"email\":\"$TEST_EMAIL\",\"password\":\"$PASSWORD\",\"displayName\":\"$DISPLAY_NAME\",\"emailVerified\":true}" \
+            | tee register.json
+          node -e "const fs=require('fs'); const x=JSON.parse(fs.readFileSync('register.json')); if(!x.ok || !x.token || !x.user) process.exit(1)"
+
+      - name: Report success
+        run: echo "Custom SMTP -> real mailbox -> OTP verify -> account creation passed."
