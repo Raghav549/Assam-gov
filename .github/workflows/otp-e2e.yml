@@ -12,19 +12,24 @@ jobs:
     env:
       BASE_URL: ${{ secrets.YOUTH_ASSAM_BACKEND_URL }}
       TEST_EMAIL: ${{ secrets.YOUTH_ASSAM_TEST_EMAIL }}
+      TEST_EMAIL_APP_PASSWORD: ${{ secrets.YOUTH_ASSAM_TEST_EMAIL_APP_PASSWORD }}
 
     steps:
       - name: Validate required secrets
         run: |
           test -n "$BASE_URL"
           test -n "$TEST_EMAIL"
-          echo "Backend: $BASE_URL"
-          echo "Test mailbox: $TEST_EMAIL"
+          test -n "$TEST_EMAIL_APP_PASSWORD"
+          echo "Backend configured"
+          echo "Test mailbox configured"
 
       - name: Health check
         run: |
           curl --fail --silent --show-error "$BASE_URL/api/health" | tee health.json
-          node -e "const fs=require('fs'); const x=JSON.parse(fs.readFileSync('health.json')); if(!x.ok || x.smtp!=='ready' || x.auth!=='custom-jwt') process.exit(1)"
+          node -e "const fs=require('fs'); const x=JSON.parse(fs.readFileSync('health.json')); if(!x.ok || x.auth!=='custom-jwt') process.exit(1); console.log(x)"
+
+      - name: Install IMAP test dependencies
+        run: npm install --no-save imap mailparser
 
       - name: Send OTP
         run: |
@@ -33,28 +38,57 @@ jobs:
             -H 'content-type: application/json' \
             --data "{\"email\":\"$TEST_EMAIL\"}" \
             | tee send.json
-          node -e "const fs=require('fs'); const x=JSON.parse(fs.readFileSync('send.json')); if(!x.ok) process.exit(1)"
+          node -e "const fs=require('fs'); const x=JSON.parse(fs.readFileSync('send.json')); if(!x.ok) process.exit(1); console.log('OTP send accepted')"
 
-      - name: Verify OTP via mailbox API
+      - name: Read real OTP from Gmail inbox
         env:
-          MAILBOX_API_URL: ${{ secrets.YOUTH_ASSAM_MAILBOX_API_URL }}
-          MAILBOX_API_TOKEN: ${{ secrets.YOUTH_ASSAM_MAILBOX_API_TOKEN }}
+          GMAIL_HOST: imap.gmail.com
+          GMAIL_PORT: '993'
         run: |
-          test -n "$MAILBOX_API_URL"
-          test -n "$MAILBOX_API_TOKEN"
-          curl --fail --silent --show-error \
-            -H "Authorization: Bearer $MAILBOX_API_TOKEN" \
-            "$MAILBOX_API_URL?to=$TEST_EMAIL" \
-            | tee mailbox.json
-          node - <<'NODE'
-          const fs=require('fs');
-          const x=JSON.parse(fs.readFileSync('mailbox.json'));
-          const text=JSON.stringify(x);
-          const m=text.match(/\b(\d{6})\b/);
-          if(!m) { console.error('No 6-digit OTP found in mailbox response'); process.exit(1); }
-          fs.writeFileSync('otp.txt', m[1]);
-          console.log('OTP received from mailbox API');
+          cat > read-otp.js <<'NODE'
+          const Imap = require('imap');
+          const { simpleParser } = require('mailparser');
+          const mailbox = process.env.TEST_EMAIL;
+          const password = process.env.TEST_EMAIL_APP_PASSWORD;
+          const imap = new Imap({ user: mailbox, password, host: process.env.GMAIL_HOST, port: Number(process.env.GMAIL_PORT), tls: true, authTimeout: 15000 });
+          const deadline = Date.now() + 60000;
+          function fail(msg){ console.error(msg); process.exit(1); }
+          function search(){
+            if(Date.now() > deadline) return fail('Timed out waiting for OTP email in Gmail');
+            imap.openBox('INBOX', false, err => {
+              if(err) return fail(`Unable to open Gmail INBOX: ${err.message}`);
+              imap.search([['TO', mailbox], ['SINCE', new Date(Date.now() - 10*60*1000)]], async (err, results) => {
+                if(err) return fail(`Gmail search failed: ${err.message}`);
+                if(!results || !results.length){ imap.closeBox(false, ()=>setTimeout(search, 5000)); return; }
+                const f=imap.fetch(results.slice(-10), {bodies:'', struct:true});
+                const messages=[];
+                f.on('message', msg => {
+                  let raw='';
+                  msg.on('body', stream => stream.on('data', chunk => raw += chunk.toString('utf8')));
+                  msg.once('end', ()=>messages.push(raw));
+                });
+                f.once('error', err=>fail(`Gmail fetch failed: ${err.message}`));
+                f.once('end', async ()=>{
+                  for(let i=messages.length-1;i>=0;i--){
+                    try {
+                      const mail=await simpleParser(messages[i]);
+                      const subject=String(mail.subject||'');
+                      const text=String(mail.text||'');
+                      if(!/Youth Assam.*Email Verification OTP/i.test(subject) && !/verification OTP/i.test(text)) continue;
+                      const m=(text+' '+String(mail.html||'')).match(/\b(\d{6})\b/);
+                      if(m){ require('fs').writeFileSync('otp.txt',m[1]); console.log('OTP received from real Gmail inbox'); imap.end(); return; }
+                    } catch(e) {}
+                  }
+                  imap.closeBox(false, ()=>setTimeout(search, 5000));
+                });
+              });
+            });
+          }
+          imap.once('ready', search);
+          imap.once('error', err=>fail(`Gmail IMAP authentication/connection failed: ${err.message}`));
+          imap.connect();
           NODE
+          node read-otp.js
 
       - name: Verify OTP
         run: |
@@ -64,7 +98,7 @@ jobs:
             -H 'content-type: application/json' \
             --data "{\"email\":\"$TEST_EMAIL\",\"otp\":\"$OTP\"}" \
             | tee verify.json
-          node -e "const fs=require('fs'); const x=JSON.parse(fs.readFileSync('verify.json')); if(!x.ok || !x.verified || !x.verificationToken) process.exit(1)"
+          node -e "const fs=require('fs'); const x=JSON.parse(fs.readFileSync('verify.json')); if(!x.ok || !x.verified || !x.verificationToken) process.exit(1); console.log('OTP verification passed')"
 
       - name: Signup with verified email
         env:
@@ -79,7 +113,7 @@ jobs:
             -H 'content-type: application/json' \
             --data "{\"email\":\"$TEST_EMAIL\",\"password\":\"$PASSWORD\",\"displayName\":\"$DISPLAY_NAME\",\"verificationToken\":\"$TOKEN\"}" \
             | tee register.json
-          node -e "const fs=require('fs'); const x=JSON.parse(fs.readFileSync('register.json')); if(!x.ok || !x.token || !x.user) process.exit(1)"
+          node -e "const fs=require('fs'); const x=JSON.parse(fs.readFileSync('register.json')); if(!x.ok || !x.token || !x.user) process.exit(1); console.log('Verified account creation passed')"
 
       - name: Report success
-        run: echo "Custom SMTP -> real mailbox -> OTP verify -> verified account creation passed."
+        run: echo "GREEN: SMTP -> real Gmail inbox -> OTP verify -> verified account creation passed."
