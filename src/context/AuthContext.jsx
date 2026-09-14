@@ -1,27 +1,23 @@
-// ============================================
-// AUTH CONTEXT - GLOBAL STATE MANAGEMENT
-// ============================================
-
-import React, { createContext, useState, useEffect, useContext } from 'react';
-import {
-  onAuthStateChange,
-  getUserById,
-  registerUser,
-  loginUser,
-  logoutUser,
-  resetPassword
-} from '../services/firebase';
-import { sendOTP, verifyOTP, resendOTP } from '../services/emailService';
+import React, { createContext, useContext, useEffect, useState } from 'react';
 import toast from 'react-hot-toast';
+import { sendOTP, verifyOTP, resendOTP, registerUser, loginUser } from '../services/emailService';
 
 const AuthContext = createContext(null);
+const SESSION_KEY = 'youth_assam_session';
 
 export const useAuth = () => {
   const context = useContext(AuthContext);
-  if (!context) {
-    throw new Error('useAuth must be used within an AuthProvider');
-  }
+  if (!context) throw new Error('useAuth must be used within an AuthProvider');
   return context;
+};
+
+const saveSession = (session) => {
+  localStorage.setItem(SESSION_KEY, JSON.stringify(session));
+};
+
+const loadSession = () => {
+  try { return JSON.parse(localStorage.getItem(SESSION_KEY) || 'null'); }
+  catch { return null; }
 };
 
 export const AuthProvider = ({ children }) => {
@@ -32,132 +28,92 @@ export const AuthProvider = ({ children }) => {
   const [pendingEmail, setPendingEmail] = useState(null);
 
   useEffect(() => {
-    const unsubscribe = onAuthStateChange(async (firebaseUser) => {
-      if (firebaseUser) {
-        setUser(firebaseUser);
-        try {
-          const data = await getUserById(firebaseUser.uid);
-          setUserData(data);
-        } catch (error) {
-          console.error('Error fetching user', error);
-        }
-      } else {
-        setUser(null);
-        setUserData(null);
-      }
-      setLoading(false);
-    });
-
-    return () => unsubscribe();
+    const session = loadSession();
+    if (session?.token && session?.user) {
+      setUser(session.user);
+      setUserData(session.user);
+    }
+    setLoading(false);
   }, []);
 
-  // Send OTP. Only move to the OTP screen after the backend confirms success.
-  const signup = async (email, password, displayName) => {
+  const signup = async (email) => {
     setLoading(true);
     try {
       const response = await sendOTP(email);
-
-      if (!response?.ok && !response?.success) {
-        throw new Error(response?.message || 'OTP could not be sent.');
-      }
-
-      setPendingEmail(email);
+      if (!response?.ok && !response?.success) throw new Error(response?.message || 'OTP could not be sent.');
+      setPendingEmail(email.trim().toLowerCase());
       setOtpSent(true);
-      setLoading(false);
       toast.success('OTP sent to your email!');
       return { success: true, step: 'verify' };
     } catch (error) {
-      setLoading(false);
       toast.error(error.message || 'Failed to send OTP');
       throw error;
-    }
+    } finally { setLoading(false); }
   };
 
-  // Verify OTP first, then create the Firebase account.
   const verifyAndCreateAccount = async (email, otp, password, displayName) => {
     setLoading(true);
     try {
-      const response = await verifyOTP(email, otp);
+      const verification = await verifyOTP(email, otp);
+      if (!verification?.ok && !verification?.success) throw new Error(verification?.message || 'Invalid OTP');
 
-      // Backend returns { ok: true }, while older code expected { success: true }.
-      if (!response?.ok && !response?.success) {
-        throw new Error(response?.message || 'Invalid OTP');
-      }
+      const response = await registerUser(email, password, displayName);
+      if (!response?.ok || !response?.token || !response?.user) throw new Error(response?.message || 'Account creation failed.');
 
-      await registerUser(email, password, displayName);
-
+      saveSession({ token: response.token, user: response.user });
+      setUser(response.user);
+      setUserData(response.user);
       setOtpSent(false);
       setPendingEmail(null);
-      setLoading(false);
       toast.success('Account created successfully!');
-      return { success: true };
+      return { success: true, user: response.user, token: response.token };
     } catch (error) {
-      setLoading(false);
       toast.error(error.message || 'Verification failed');
       throw error;
-    }
+    } finally { setLoading(false); }
   };
 
   const resendSignupOTP = async (email) => {
-    try {
-      const response = await resendOTP(email);
-      if (!response?.ok && !response?.success) {
-        throw new Error(response?.message || 'OTP could not be resent.');
-      }
-      toast.success('New OTP sent to your email!');
-      return response;
-    } catch (error) {
-      toast.error(error.message || 'Failed to resend OTP');
-      throw error;
-    }
+    const response = await resendOTP(email);
+    if (!response?.ok && !response?.success) throw new Error(response?.message || 'OTP could not be resent.');
+    setPendingEmail(email.trim().toLowerCase());
+    setOtpSent(true);
+    toast.success('New OTP sent to your email!');
+    return response;
   };
 
   const login = async (email, password) => {
     setLoading(true);
     try {
-      await loginUser(email, password);
+      const response = await loginUser(email, password);
+      if (!response?.ok || !response?.token || !response?.user) throw new Error(response?.message || 'Login failed.');
+      saveSession({ token: response.token, user: response.user });
+      setUser(response.user);
+      setUserData(response.user);
       toast.success('Logged in successfully!');
-      setLoading(false);
+      return response;
     } catch (error) {
       toast.error(error.message || 'Login failed');
-      setLoading(false);
       throw error;
-    }
+    } finally { setLoading(false); }
   };
 
   const logout = async () => {
-    setLoading(true);
-    try {
-      await logoutUser();
-      toast.success('Logged out successfully');
-      setLoading(false);
-    } catch (error) {
-      toast.error('Logout failed');
-      setLoading(false);
-    }
+    localStorage.removeItem(SESSION_KEY);
+    setUser(null);
+    setUserData(null);
+    setOtpSent(false);
+    setPendingEmail(null);
+    toast.success('Logged out successfully');
   };
 
-  const forgotPassword = async (email) => {
-    try {
-      await resetPassword(email);
-      toast.success('Password reset link sent to your email');
-    } catch (error) {
-      toast.error(error.message || 'Failed to send reset link');
-    }
+  const forgotPassword = async () => {
+    throw new Error('Password reset is not enabled in the custom JWT authentication flow yet.');
   };
 
   const value = {
-    user,
-    userData,
-    loading,
-    otpSent,
-    pendingEmail,
-    signup,
-    resendSignupOTP,
-    verifyAndCreateAccount,
-    login,
-    logout,
-    forgotPassword,
+    user, userData, loading, otpSent, pendingEmail,
+    signup, resendSignupOTP, verifyAndCreateAccount, login, logout, forgotPassword,
     isAdmin: userData?.role === 'admin',
     isStudent: userData?.role === 'student'
   };
