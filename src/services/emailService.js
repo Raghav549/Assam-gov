@@ -1,6 +1,5 @@
 import axios from 'axios';
 
-// Always use the real Render backend in production. Localhost is only for local development.
 const PRODUCTION_BACKEND_URL = 'https://youth-assam-backend.onrender.com';
 const configuredBaseUrl =
   process.env.REACT_APP_BACKEND_URL ||
@@ -9,14 +8,9 @@ const configuredBaseUrl =
 
 const API_BASE_URL = configuredBaseUrl.replace(/\/$/, '') + '/api';
 
-const getErrorMessage = (error, fallback) => {
-  return (
-    error?.response?.data?.message ||
-    error?.response?.data?.error ||
-    error?.message ||
-    fallback
-  );
-};
+const getErrorMessage = (error, fallback) => (
+  error?.response?.data?.message || error?.response?.data?.error || error?.message || fallback
+);
 
 export const sendOTP = async (email) => {
   try {
@@ -38,14 +32,31 @@ export const verifyOTP = async (email, otp) => {
   }
 };
 
-export const resendOTP = async (email) => {
+export const resendOTP = sendOTP;
+
+export const registerUser = async (email, password, displayName) => {
   try {
-    const response = await axios.post(`${API_BASE_URL}/otp/send`, { email }, { timeout: 25000 });
+    const response = await axios.post(`${API_BASE_URL}/auth/register`, {
+      email,
+      password,
+      displayName,
+      emailVerified: true
+    }, { timeout: 25000 });
     return response.data;
   } catch (error) {
-    console.error('Resend OTP error:', error);
-    throw new Error(getErrorMessage(error, 'Unable to resend OTP. Please try again.'));
+    console.error('Register error:', error);
+    throw new Error(getErrorMessage(error, 'Unable to create account. Please try again.'));
   }
 };
 
-export default { sendOTP, verifyOTP, resendOTP };
+export const loginUser = async (email, password) => {
+  try {
+    const response = await axios.post(`${API_BASE_URL}/auth/login`, { email, password }, { timeout: 25000 });
+    return response.data;
+  } catch (error) {
+    console.error('Login error:', error);
+    throw new Error(getErrorMessage(error, 'Unable to sign in. Please try again.'));
+  }
+};
+
+export default { sendOTP, verifyOTP, resendOTP, registerUser, loginUser };
