@@ -2,11 +2,11 @@
 // SIGNUP COMPONENT WITH OTP
 // ============================================
 
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import { useNavigate, Link } from 'react-router-dom';
 import { useAuth } from '../../context/AuthContext';
 import { validateSignup } from '../../utils/validators';
-import { FiMail, FiLock, FiUser, FiArrowRight, FiCheckCircle } from 'react-icons/fi';
+import { FiMail, FiLock, FiUser, FiArrowRight } from 'react-icons/fi';
 import { MdOutlinePhoneAndroid } from 'react-icons/md';
 
 const Signup = () => {
@@ -20,13 +20,22 @@ const Signup = () => {
   const [errors, setErrors] = useState({});
   const [isLoading, setIsLoading] = useState(false);
   const [step, setStep] = useState(1); // 1: Details, 2: OTP
+  const [resendCooldown, setResendCooldown] = useState(0);
   
-  const { signup, verifyAndCreateAccount, otpSent, pendingEmail } = useAuth();
+  const { signup, verifyAndCreateAccount, resendSignupOTP, pendingEmail } = useAuth();
   const navigate = useNavigate();
+
+  useEffect(() => {
+    if (resendCooldown <= 0) return undefined;
+    const timer = window.setInterval(() => {
+      setResendCooldown((value) => (value > 0 ? value - 1 : 0));
+    }, 1000);
+    return () => window.clearInterval(timer);
+  }, [resendCooldown]);
 
   const handleChange = (e) => {
     const { name, value } = e.target;
-    setFormData(prev => ({ ...prev, [name]: value }));
+    setFormData(prev => ({ ...prev, [name]: name === 'otp' ? value.replace(/\D/g, '').slice(0, 6) : value }));
     if (errors[name]) {
       setErrors(prev => ({ ...prev, [name]: '' }));
     }
@@ -34,51 +43,66 @@ const Signup = () => {
 
   const handleSubmit = async (e) => {
     e.preventDefault();
-    
+
     if (step === 1) {
       const validationErrors = validateSignup(formData);
       if (Object.keys(validationErrors).length > 0) {
         setErrors(validationErrors);
         return;
       }
-      
+
       setIsLoading(true);
       try {
-        await signup(formData.email, formData.password, formData.displayName);
+        await signup(formData.email);
         setStep(2);
+        setResendCooldown(30);
       } catch (error) {
         console.error(error);
       } finally {
         setIsLoading(false);
       }
-    } else {
-      if (!formData.otp) {
-        setErrors({ otp: 'Please enter the OTP' });
-        return;
-      }
-      
-      setIsLoading(true);
-      try {
-        await verifyAndCreateAccount(
-          formData.email, 
-          formData.otp, 
-          formData.password, 
-          formData.displayName
-        );
-        navigate('/dashboard');
-      } catch (error) {
-        console.error(error);
-      } finally {
-        setIsLoading(false);
-      }
+      return;
+    }
+
+    if (!/^\d{6}$/.test(formData.otp)) {
+      setErrors({ otp: 'Please enter the 6-digit OTP sent to your email.' });
+      return;
+    }
+
+    setIsLoading(true);
+    try {
+      await verifyAndCreateAccount(
+        formData.email,
+        formData.otp,
+        formData.password,
+        formData.displayName
+      );
+      navigate('/dashboard', { replace: true });
+    } catch (error) {
+      console.error(error);
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  const handleResend = async () => {
+    if (resendCooldown > 0 || isLoading) return;
+    setIsLoading(true);
+    try {
+      await resendSignupOTP(formData.email);
+      setFormData(prev => ({ ...prev, otp: '' }));
+      setResendCooldown(30);
+      setErrors(prev => ({ ...prev, otp: '' }));
+    } catch (error) {
+      setErrors(prev => ({ ...prev, otp: error.message || 'Could not resend OTP.' }));
+    } finally {
+      setIsLoading(false);
     }
   };
 
   return (
     <div className="min-h-screen flex items-center justify-center bg-gray-50 py-12 px-4 sm:px-6 lg:px-8">
       <div className="max-w-md w-full space-y-8 bg-white p-8 rounded-2xl shadow-xl border border-gray-100">
-        
-        {/* Header */}
         <div className="text-center">
           <div className="mx-auto h-12 w-12 bg-gradient-to-br from-green-500 to-blue-600 rounded-xl flex items-center justify-center text-white font-bold text-xl mb-4">
             YA
@@ -87,15 +111,14 @@ const Signup = () => {
             {step === 1 ? 'Create your account' : 'Verify your email'}
           </h2>
           <p className="mt-2 text-sm text-gray-600">
-            {step === 1 
-              ? 'Join Youth Assam to access scholarships, courses, and more.' 
-              : `We sent a code to ${pendingEmail}`}
+            {step === 1
+              ? 'Join Youth Assam to access scholarships, courses, and more.'
+              : `We sent a 6-digit code to ${pendingEmail || formData.email}`}
           </p>
         </div>
 
-        <form className="mt-8 space-y-6" onSubmit={handleSubmit}>
+        <form className="mt-8 space-y-6" onSubmit={handleSubmit} noValidate>
           <div className="rounded-md shadow-sm -space-y-px">
-            
             {step === 1 ? (
               <>
                 <div className="mb-4">
@@ -192,6 +215,8 @@ const Signup = () => {
                     id="otp"
                     name="otp"
                     type="text"
+                    inputMode="numeric"
+                    autoComplete="one-time-code"
                     maxLength="6"
                     required
                     className={`appearance-none rounded-lg relative block w-full pl-10 pr-3 py-3 border ${errors.otp ? 'border-red-500' : 'border-gray-300'} placeholder-gray-500 text-gray-900 focus:outline-none focus:ring-2 focus:ring-green-500 focus:border-transparent transition-all text-center tracking-widest text-lg font-bold`}
@@ -201,14 +226,25 @@ const Signup = () => {
                   />
                 </div>
                 {errors.otp && <p className="mt-1 text-sm text-red-600">{errors.otp}</p>}
-                <p className="mt-2 text-xs text-gray-500 text-center">
-                  Didn't receive code? <button type="button" onClick={() => signup(formData.email, formData.password, formData.displayName)} className="text-green-600 hover:underline">Resend</button>
-                </p>
+                <div className="mt-3 text-center text-xs text-gray-500 space-y-2">
+                  <p>Check your inbox and spam folder for the Youth Assam verification email.</p>
+                  <p>
+                    Didn't receive the code?{' '}
+                    <button
+                      type="button"
+                      onClick={handleResend}
+                      disabled={resendCooldown > 0 || isLoading}
+                      className="font-medium text-green-600 hover:underline disabled:text-gray-400 disabled:no-underline"
+                    >
+                      {resendCooldown > 0 ? `Resend in ${resendCooldown}s` : 'Resend OTP'}
+                    </button>
+                  </p>
+                </div>
               </div>
             )}
           </div>
 
-          <div>
+          <div className="space-y-3">
             <button
               type="submit"
               disabled={isLoading}
@@ -226,6 +262,20 @@ const Signup = () => {
                 </>
               )}
             </button>
+
+            {step === 2 && (
+              <button
+                type="button"
+                onClick={() => {
+                  setStep(1);
+                  setFormData(prev => ({ ...prev, otp: '' }));
+                  setErrors({});
+                }}
+                className="w-full py-2 text-sm font-medium text-gray-600 hover:text-gray-900"
+              >
+                Change email or details
+              </button>
+            )}
           </div>
         </form>
 
