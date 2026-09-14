@@ -23,6 +23,16 @@ function signToken(user) {
   );
 }
 
+function verifyEmailVerificationToken(token, email) {
+  if (!token) return false;
+  try {
+    const payload = jwt.verify(token, requireJwtSecret());
+    return payload?.purpose === 'email_verification' && payload?.email === email;
+  } catch {
+    return false;
+  }
+}
+
 async function getUserByEmail(email) {
   const { data, error } = await supabaseAdmin
     .from('users')
@@ -38,6 +48,7 @@ exports.register = async (req, res, next) => {
     const email = normalizeEmail(req.body.email);
     const password = String(req.body.password || '');
     const displayName = String(req.body.displayName || '').trim();
+    const verificationToken = String(req.body.verificationToken || '');
 
     if (!isEmail(email)) return res.status(400).json({ ok: false, message: 'Valid email is required' });
     if (password.length < 8) return res.status(400).json({ ok: false, message: 'Password must be at least 8 characters' });
@@ -46,8 +57,8 @@ exports.register = async (req, res, next) => {
     const existing = await getUserByEmail(email);
     if (existing) return res.status(409).json({ ok: false, message: 'An account with this email already exists.' });
 
-    if (!req.body.emailVerified) {
-      return res.status(400).json({ ok: false, message: 'Email verification is required before account creation.' });
+    if (!verifyEmailVerificationToken(verificationToken, email)) {
+      return res.status(400).json({ ok: false, message: 'Valid email verification is required before account creation.' });
     }
 
     const uid = `user_${Date.now()}_${Math.random().toString(36).slice(2, 10)}`;
