@@ -24,13 +24,20 @@ app.get('/', (req, res) => {
 
 app.get('/api/health', async (req, res) => {
   let smtp = 'unknown';
+  let smtpError = null;
   try {
     await verifyMailer();
     smtp = 'ready';
   } catch (error) {
     smtp = 'error';
+    smtpError = {
+      code: error?.code || null,
+      responseCode: error?.responseCode || null,
+      command: error?.command || null,
+      message: String(error?.message || 'SMTP verification failed').replace(/(password|pass|auth|user|username)=?[^\s,;]*/gi, '$1=[redacted]')
+    };
   }
-  res.json({ ok: true, database: 'supabase-data-only', auth: 'custom-jwt', smtp, time: new Date().toISOString() });
+  res.json({ ok: true, database: 'supabase-data-only', auth: 'custom-jwt', smtp, smtpError, time: new Date().toISOString() });
 });
 
 app.use('/api/otp', otpRoutes);
