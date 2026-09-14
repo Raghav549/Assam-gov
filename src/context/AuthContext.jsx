@@ -55,10 +55,14 @@ export const AuthProvider = ({ children }) => {
     setLoading(true);
     try {
       const verification = await verifyOTP(email, otp);
-      if (!verification?.ok && !verification?.success) throw new Error(verification?.message || 'Invalid OTP');
+      if (!verification?.ok || !verification?.verificationToken) {
+        throw new Error(verification?.message || 'Invalid OTP');
+      }
 
-      const response = await registerUser(email, password, displayName);
-      if (!response?.ok || !response?.token || !response?.user) throw new Error(response?.message || 'Account creation failed.');
+      const response = await registerUser(email, password, displayName, verification.verificationToken);
+      if (!response?.ok || !response?.token || !response?.user) {
+        throw new Error(response?.message || 'Account creation failed.');
+      }
 
       saveSession({ token: response.token, user: response.user });
       setUser(response.user);
