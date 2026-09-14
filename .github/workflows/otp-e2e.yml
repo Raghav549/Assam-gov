@@ -64,7 +64,7 @@ jobs:
             -H 'content-type: application/json' \
             --data "{\"email\":\"$TEST_EMAIL\",\"otp\":\"$OTP\"}" \
             | tee verify.json
-          node -e "const fs=require('fs'); const x=JSON.parse(fs.readFileSync('verify.json')); if(!x.ok || !x.verified) process.exit(1)"
+          node -e "const fs=require('fs'); const x=JSON.parse(fs.readFileSync('verify.json')); if(!x.ok || !x.verified || !x.verificationToken) process.exit(1)"
 
       - name: Signup with verified email
         env:
@@ -72,12 +72,14 @@ jobs:
           DISPLAY_NAME: Youth Assam CI
         run: |
           test -n "$PASSWORD"
+          TOKEN=$(node -e "const fs=require('fs'); const x=JSON.parse(fs.readFileSync('verify.json')); process.stdout.write(x.verificationToken || '')")
+          test -n "$TOKEN"
           curl --fail --silent --show-error \
             -X POST "$BASE_URL/api/auth/register" \
             -H 'content-type: application/json' \
-            --data "{\"email\":\"$TEST_EMAIL\",\"password\":\"$PASSWORD\",\"displayName\":\"$DISPLAY_NAME\",\"emailVerified\":true}" \
+            --data "{\"email\":\"$TEST_EMAIL\",\"password\":\"$PASSWORD\",\"displayName\":\"$DISPLAY_NAME\",\"verificationToken\":\"$TOKEN\"}" \
             | tee register.json
           node -e "const fs=require('fs'); const x=JSON.parse(fs.readFileSync('register.json')); if(!x.ok || !x.token || !x.user) process.exit(1)"
 
       - name: Report success
-        run: echo "Custom SMTP -> real mailbox -> OTP verify -> account creation passed."
+        run: echo "Custom SMTP -> real mailbox -> OTP verify -> verified account creation passed."
