@@ -1,4 +1,10 @@
-const { supabaseAdmin } = require('../utils/supabase');
+const crypto = require('crypto');
+const { sendOtpEmail } = require('../mailer');
+
+const otpStore = new Map();
+const OTP_TTL_MS = 10 * 60 * 1000;
+const RESEND_COOLDOWN_MS = 30 * 1000;
+const MAX_ATTEMPTS = 5;
 
 function normalizeEmail(email) {
   return String(email || '').trim().toLowerCase();
@@ -8,6 +14,14 @@ function isEmail(email) {
   return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email);
 }
 
+function hashOtp(otp) {
+  return crypto.createHash('sha256').update(String(otp)).digest('hex');
+}
+
+function generateOtp() {
+  return String(crypto.randomInt(100000, 1000000));
+}
+
 exports.sendOtp = async (req, res, next) => {
   try {
     const email = normalizeEmail(req.body.email);
@@ -15,13 +29,24 @@ exports.sendOtp = async (req, res, next) => {
       return res.status(400).json({ ok: false, message: 'Valid email is required' });
     }
 
-    const { error } = await supabaseAdmin.auth.signInWithOtp({
-      email,
-      options: { shouldCreateUser: true }
+    const existing = otpStore.get(email);
+    const now = Date.now();
+    if (existing && now - existing.sentAt < RESEND_COOLDOWN_MS) {
+      const wait = Math.ceil((RESEND_COOLDOWN_MS - (now - existing.sentAt)) / 1000);
+      return res.status(429).json({ ok: false, message: `Please wait ${wait}s before requesting another OTP.` });
+    }
+
+    const otp = generateOtp();
+    await sendOtpEmail(email, otp);
+
+    otpStore.set(email, {
+      codeHash: hashOtp(otp),
+      expiresAt: now + OTP_TTL_MS,
+      sentAt: now,
+      attempts: 0
     });
 
-    if (error) throw error;
-    res.json({ ok: true, message: 'OTP sent successfully to your email' });
+    return res.json({ ok: true, message: 'OTP sent successfully to your email' });
   } catch (error) {
     next(error);
   }
@@ -31,6 +56,7 @@ exports.verifyOtp = async (req, res, next) => {
   try {
     const email = normalizeEmail(req.body.email);
     const otp = String(req.body.otp || '').trim();
+
     if (!isEmail(email)) {
       return res.status(400).json({ ok: false, message: 'Valid email is required' });
     }
@@ -38,21 +64,26 @@ exports.verifyOtp = async (req, res, next) => {
       return res.status(400).json({ ok: false, message: 'Valid 6 digit OTP is required' });
     }
 
-    const { data, error } = await supabaseAdmin.auth.verifyOtp({
-      email,
-      token: otp,
-      type: 'email'
-    });
+    const record = otpStore.get(email);
+    if (!record) {
+      return res.status(400).json({ ok: false, message: 'OTP not found. Please request a new OTP.' });
+    }
+    if (Date.now() > record.expiresAt) {
+      otpStore.delete(email);
+      return res.status(400).json({ ok: false, message: 'OTP has expired. Please request a new OTP.' });
+    }
+    if (record.attempts >= MAX_ATTEMPTS) {
+      otpStore.delete(email);
+      return res.status(429).json({ ok: false, message: 'Too many invalid attempts. Please request a new OTP.' });
+    }
 
-    if (error) throw error;
+    record.attempts += 1;
+    if (hashOtp(otp) !== record.codeHash) {
+      return res.status(400).json({ ok: false, message: 'Invalid OTP' });
+    }
 
-    res.json({
-      ok: true,
-      verified: true,
-      message: 'Email verified successfully',
-      user: data?.user || null,
-      session: data?.session || null
-    });
+    otpStore.delete(email);
+    return res.json({ ok: true, verified: true, message: 'Email verified successfully' });
   } catch (error) {
     next(error);
   }
