@@ -1,7 +1,6 @@
 import React, { useState } from 'react';
 import toast from 'react-hot-toast';
-
-const API_BASE = process.env.REACT_APP_API_URL || '';
+import { sendOTP, verifyOTP } from '../services/emailService';
 
 export default function EmailVerification() {
   const [email, setEmail] = useState('');
@@ -14,16 +13,11 @@ export default function EmailVerification() {
     if (!email.trim()) return toast.error('Enter your email');
     setLoading(true);
     try {
-      const res = await fetch(`${API_BASE}/api/otp/send-otp`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ email })
-      });
-      const data = await res.json();
-      if (!res.ok) throw new Error(data.message || 'OTP send failed');
+      const data = await sendOTP(email);
       setSent(true);
       toast.success(data.message || 'OTP sent');
     } catch (error) {
+      if (error.code === 'OTP_COOLDOWN') setSent(true);
       toast.error(error.message);
     } finally {
       setLoading(false);
@@ -34,13 +28,7 @@ export default function EmailVerification() {
     if (!otp.trim()) return toast.error('Enter OTP');
     setLoading(true);
     try {
-      const res = await fetch(`${API_BASE}/api/otp/verify-otp`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ email, otp })
-      });
-      const data = await res.json();
-      if (!res.ok) throw new Error(data.message || 'OTP verification failed');
+      const data = await verifyOTP(email, otp);
       setVerified(true);
       toast.success(data.message || 'Email verified');
     } catch (error) {

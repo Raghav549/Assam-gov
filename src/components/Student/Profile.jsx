@@ -10,7 +10,7 @@ import { FiCamera, FiMail, FiPhone, FiMapPin } from 'react-icons/fi';
 import toast from 'react-hot-toast';
 
 const Profile = () => {
-  const { user, userData, loading } = useAuth();
+  const { user, userData, loading, updateLocalUser } = useAuth();
   const [isEditing, setIsEditing] = useState(false);
   const [formData, setFormData] = useState({
     displayName: userData?.displayName || '',
@@ -44,16 +44,16 @@ const Profile = () => {
         photoURL = await uploadImage(imageFile, 'profiles');
       }
 
-      await updateUserProfile(user.uid, {
+      const changes = {
         displayName: formData.displayName,
         phone: formData.phone,
         location: formData.location,
         bio: formData.bio,
         profilePicture: photoURL
-      });
-
-      // Supabase is now the single authentication/profile backend.
-      // Do not dynamically import Firebase here: Firebase has been removed.
+      };
+      const saved = await updateUserProfile(user.uid, changes);
+      if (!saved) throw new Error('Profile could not be saved (permission denied). Ask the administrator to configure SUPABASE_JWT_SECRET on the backend.');
+      updateLocalUser(changes);
       toast.success('Profile updated successfully');
       setIsEditing(false);
     } catch (error) {

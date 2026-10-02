@@ -1,62 +1,74 @@
+// ============================================
+// AUTH / EMAIL API CLIENT
+// ============================================
 import axios from 'axios';
+import { API_BASE_URL } from './config';
+import { getAuthToken } from './session';
 
-const PRODUCTION_BACKEND_URL = 'https://youth-assam-backend.onrender.com';
-const configuredBaseUrl =
-  process.env.REACT_APP_BACKEND_URL ||
-  process.env.REACT_APP_API_URL ||
-  (process.env.NODE_ENV === 'production' ? PRODUCTION_BACKEND_URL : 'http://localhost:5000');
+// Render free instances sleep and take ~30-60s to wake up; a 25s timeout made
+// the very first "Send OTP" fail even though the email was sent moments later.
+const REQUEST_TIMEOUT_MS = 70000;
 
-const API_BASE_URL = configuredBaseUrl.replace(/\/$/, '') + '/api';
+const http = axios.create({ baseURL: API_BASE_URL, timeout: REQUEST_TIMEOUT_MS, headers: { 'Content-Type': 'application/json' } });
 
-const getErrorMessage = (error, fallback) => (
-  error?.response?.data?.message || error?.response?.data?.error || error?.message || fallback
-);
+export class ApiError extends Error {
+  constructor(message, { status = 0, code = null, data = null } = {}) {
+    super(message);
+    this.name = 'ApiError';
+    this.status = status;
+    this.code = code;
+    this.data = data;
+  }
+}
 
-export const sendOTP = async (email) => {
+function toApiError(error, fallback) {
+  const data = error?.response?.data;
+  if (error?.response) {
+    const message = data?.message || data?.error || fallback;
+    return new ApiError(message, { status: error.response.status, code: data?.code || null, data });
+  }
+  if (error?.code === 'ECONNABORTED') {
+    return new ApiError('The server is taking too long to respond (it may be waking up). Please try again.', { code: 'TIMEOUT' });
+  }
+  return new ApiError('Cannot reach the server. Check your internet connection and try again.', { code: 'NETWORK' });
+}
+
+async function request(method, url, body, fallback, { auth = false } = {}) {
   try {
-    const response = await axios.post(`${API_BASE_URL}/otp/send`, { email }, { timeout: 25000 });
+    const headers = {};
+    if (auth) {
+      const token = getAuthToken();
+      if (token) headers.Authorization = `Bearer ${token}`;
+    }
+    const response = await http.request({ method, url, data: body, headers });
     return response.data;
   } catch (error) {
-    console.error('Send OTP error:', error);
-    throw new Error(getErrorMessage(error, 'Unable to send OTP. Please try again.'));
+    const apiError = toApiError(error, fallback);
+    if (process.env.NODE_ENV !== 'production') console.error(`${method.toUpperCase()} ${url} failed:`, apiError, apiError.data);
+    throw apiError;
   }
+}
+
+/** Fire-and-forget request that wakes a sleeping backend before the user submits. */
+export const warmUpBackend = () => {
+  http.get('/health', { timeout: REQUEST_TIMEOUT_MS }).catch(() => {});
 };
 
-export const verifyOTP = async (email, otp) => {
-  try {
-    const response = await axios.post(`${API_BASE_URL}/otp/verify`, { email, otp }, { timeout: 25000 });
-    return response.data;
-  } catch (error) {
-    console.error('Verify OTP error:', error);
-    throw new Error(getErrorMessage(error, 'Unable to verify OTP. Please try again.'));
-  }
-};
-
+export const sendOTP = (email) => request('post', '/otp/send', { email: email.trim() }, 'Unable to send OTP. Please try again.');
 export const resendOTP = sendOTP;
+export const verifyOTP = (email, otp) => request('post', '/otp/verify', { email: email.trim(), otp }, 'Unable to verify OTP. Please try again.');
 
-export const registerUser = async (email, password, displayName, verificationToken) => {
-  try {
-    const response = await axios.post(`${API_BASE_URL}/auth/register`, {
-      email,
-      password,
-      displayName,
-      verificationToken
-    }, { timeout: 25000 });
-    return response.data;
-  } catch (error) {
-    console.error('Register error:', error);
-    throw new Error(getErrorMessage(error, 'Unable to create account. Please try again.'));
-  }
-};
+export const registerUser = (email, password, displayName, verificationToken) =>
+  request('post', '/auth/register', { email: email.trim(), password, displayName, verificationToken }, 'Unable to create account. Please try again.');
 
-export const loginUser = async (email, password) => {
-  try {
-    const response = await axios.post(`${API_BASE_URL}/auth/login`, { email, password }, { timeout: 25000 });
-    return response.data;
-  } catch (error) {
-    console.error('Login error:', error);
-    throw new Error(getErrorMessage(error, 'Unable to sign in. Please try again.'));
-  }
-};
+export const loginUser = (email, password) => request('post', '/auth/login', { email: email.trim(), password }, 'Unable to sign in. Please try again.');
 
-export default { sendOTP, verifyOTP, resendOTP, registerUser, loginUser };
+export const fetchCurrentUser = () => request('get', '/auth/me', undefined, 'Unable to load your account.', { auth: true });
+
+export const requestPasswordReset = (email) => request('post', '/auth/forgot-password', { email: email.trim() }, 'Unable to send reset code. Please try again.');
+
+export const resetPassword = (email, otp, password) =>
+  request('post', '/auth/reset-password', { email: email.trim(), otp, password }, 'Unable to reset password. Please try again.');
+
+const emailService = { sendOTP, verifyOTP, resendOTP, registerUser, loginUser, fetchCurrentUser, requestPasswordReset, resetPassword, warmUpBackend };
+export default emailService;

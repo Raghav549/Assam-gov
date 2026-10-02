@@ -3,11 +3,18 @@
 .env.*
 !.env.example
 
+# Dependencies / build output
+node_modules/
+build/
+coverage/
+
+# Logs / OS
+*.log
+npm-debug.log*
+.DS_Store
+
 # Compiled class file
 *.class
-
-# Log file
-*.log
 
 # BlueJ files
 *.ctxt

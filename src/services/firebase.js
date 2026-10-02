@@ -1,19 +1,30 @@
-// Supabase service layer kept at this path for backward-compatible imports.
-// Firebase has been fully removed from the frontend.
+// Supabase data/storage layer (kept at this path for backward-compatible imports).
+// Authentication is handled by the custom JWT backend (see services/emailService.js).
+// When the backend has SUPABASE_JWT_SECRET configured, each login returns a
+// `supabaseToken` whose `sub` is the user's uid, so Row Level Security policies
+// based on auth.uid() work for these users. Without it, requests use the anon key.
 
 import { createClient } from '@supabase/supabase-js';
+import { getSupabaseToken, onSessionChange } from './session';
 
 const SUPABASE_URL = process.env.REACT_APP_SUPABASE_URL;
 const SUPABASE_ANON_KEY = process.env.REACT_APP_SUPABASE_ANON_KEY;
 
-if (!SUPABASE_URL || !SUPABASE_ANON_KEY) {
+export const isSupabaseConfigured = Boolean(SUPABASE_URL && SUPABASE_ANON_KEY);
+if (!isSupabaseConfigured) {
   console.warn('Supabase environment variables are missing. Add REACT_APP_SUPABASE_URL and REACT_APP_SUPABASE_ANON_KEY.');
 }
 
-export const supabase = createClient(SUPABASE_URL || 'https://placeholder.supabase.co', SUPABASE_ANON_KEY || 'placeholder-anon-key');
-export const auth = supabase.auth;
+export const supabase = createClient(SUPABASE_URL || 'https://placeholder.supabase.co', SUPABASE_ANON_KEY || 'placeholder-anon-key', {
+  accessToken: async () => getSupabaseToken()
+});
 export const db = supabase;
 export const storage = supabase.storage;
+
+// Keep realtime subscriptions authorised as the session changes.
+onSessionChange(() => {
+  try { supabase.realtime.setAuth(getSupabaseToken() || SUPABASE_ANON_KEY || null); } catch { /* ignore */ }
+});
 
 const tables = {
   users: 'users', posts: 'posts', scholarships: 'scholarships', courses: 'courses',
@@ -36,30 +47,13 @@ const now = () => new Date().toISOString();
 const unwrap = async (promise) => { const { data, error } = await promise; if (error) throw error; return data; };
 const list = (data) => (data || []).map(row => ({ id: row.id, ...row }));
 
-// AUTH
-export const registerUser = async (email, password, displayName) => {
-  const { data, error } = await supabase.auth.signUp({ email, password });
-  if (error) throw error;
-  if (!data.user) throw new Error('Account could not be created.');
-  const profile = { uid: data.user.id, email, displayName, role: 'student', profilePicture: null, bio: '', location: '', phone: '', educationLevel: '', interests: [], createdAt: now(), updatedAt: now(), isVerified: true, isActive: true };
-  const { error: profileError } = await supabase.from(tables.users).upsert(profile, { onConflict: 'uid' });
-  if (profileError) throw profileError;
-  return { ...data.user, uid: data.user.id };
-};
-
-export const loginUser = async (email, password) => {
-  const { data, error } = await supabase.auth.signInWithPassword({ email, password });
-  if (error) throw error;
-  return { ...data.user, uid: data.user.id };
-};
-export const logoutUser = async () => { const { error } = await supabase.auth.signOut(); if (error) throw error; };
-export const resetPassword = async (email) => { const { error } = await supabase.auth.resetPasswordForEmail(email, { redirectTo: `${window.location.origin}/reset-password` }); if (error) throw error; };
-export const onAuthStateChange = (callback) => { const { data } = supabase.auth.onAuthStateChange((_event, user) => callback(user ? { ...user, uid: user.id } : null)); return () => data.subscription.unsubscribe(); };
+// Never select the password hash into the browser.
+const USER_COLUMNS = 'id,uid,email,displayName,role,profilePicture,bio,location,phone,educationLevel,interests,createdAt,updatedAt,isVerified,isActive';
 
 // USERS
-export const getUserById = async (uid) => { const data = await unwrap(supabase.from(tables.users).select('*').eq('uid', uid).maybeSingle()); return data ? { id: data.id, ...data } : null; };
-export const updateUserProfile = async (userId, data) => unwrap(supabase.from(tables.users).update({ ...data, updatedAt: now() }).eq('uid', userId));
-export const getAllUsers = async () => list(await unwrap(supabase.from(tables.users).select('*').order('createdAt', { ascending: false })));
+export const getUserById = async (uid) => { const data = await unwrap(supabase.from(tables.users).select(USER_COLUMNS).eq('uid', uid).maybeSingle()); return data ? { id: data.id, ...data } : null; };
+export const updateUserProfile = async (userId, data) => { const { passwordHash, role, isActive, email, uid, id, ...safe } = data || {}; return unwrap(supabase.from(tables.users).update({ ...safe, updatedAt: now() }).eq('uid', userId).select(USER_COLUMNS).maybeSingle()); };
+export const getAllUsers = async () => list(await unwrap(supabase.from(tables.users).select(USER_COLUMNS).order('createdAt', { ascending: false })));
 export const updateUserRole = async (userId, role) => unwrap(supabase.from(tables.users).update({ role, updatedAt: now() }).eq('uid', userId));
 export const toggleUserActive = async (userId, isActive) => unwrap(supabase.from(tables.users).update({ isActive, updatedAt: now() }).eq('uid', userId));
 
@@ -131,4 +125,4 @@ export const uploadFile = async (bucket, path, file, options = {}) => { const { 
 export const getFileUrl = (bucket, path) => supabase.storage.from(bucket).getPublicUrl(path).data.publicUrl;
 export const deleteFile = async (bucket, path) => { const { error } = await supabase.storage.from(bucket).remove([path]); if (error) throw error; };
 
-export default { supabase, registerUser, loginUser, logoutUser, resetPassword, onAuthStateChange, getUserById, updateUserProfile, getAllUsers, updateUserRole, toggleUserActive, createPost, getAllPosts, getPendingPosts, approvePost, rejectPost, deletePost, likePost, unlikePost, addComment, getCommentsByPost, createScholarship, getAllScholarships, getScholarshipById, updateScholarship, deleteScholarship, createCourse, getAllCourses, updateCourse, deleteCourse, createHelpRequest, getHelpRequests, replyToHelpRequest, updateHelpRequestStatus, createDonationRequest, getDonationRequests, approveDonationRequest, rejectDonationRequest, recordDonation, createGovtWork, getAllGovtWorks, updateGovtWork, deleteGovtWork, reportGovtIssue, getGovtIssues, createNotification, getUserNotifications, markNotificationRead, markAllNotificationsRead, getUnreadCount, subscribeToPosts, subscribeToNotifications, uploadFile, getFileUrl, deleteFile };
+export default { supabase, getUserById, updateUserProfile, getAllUsers, updateUserRole, toggleUserActive, createPost, getAllPosts, getPendingPosts, approvePost, rejectPost, deletePost, likePost, unlikePost, addComment, getCommentsByPost, createScholarship, getAllScholarships, getScholarshipById, updateScholarship, deleteScholarship, createCourse, getAllCourses, updateCourse, deleteCourse, createHelpRequest, getHelpRequests, replyToHelpRequest, updateHelpRequestStatus, createDonationRequest, getDonationRequests, approveDonationRequest, rejectDonationRequest, recordDonation, createGovtWork, getAllGovtWorks, updateGovtWork, deleteGovtWork, reportGovtIssue, getGovtIssues, createNotification, getUserNotifications, markNotificationRead, markAllNotificationsRead, getUnreadCount, subscribeToPosts, subscribeToNotifications, uploadFile, getFileUrl, deleteFile };
