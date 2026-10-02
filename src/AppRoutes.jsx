@@ -19,6 +19,7 @@ import Contact from './pages/Contact';
 import Login from './components/Auth/Login';
 import Signup from './components/Auth/Signup';
 import ForgotPassword from './components/Auth/ForgotPassword';
+import EmailVerification from './pages/EmailVerification';
 
 // Student Dashboard Pages
 import Dashboard from './components/Student/Dashboard';
@@ -98,6 +99,8 @@ const AppRoutes = () => {
           <Route path="/login" element={<PublicRoute><Login /></PublicRoute>} />
           <Route path="/signup" element={<PublicRoute><Signup /></PublicRoute>} />
           <Route path="/forgot-password" element={<PublicRoute><ForgotPassword /></PublicRoute>} />
+          <Route path="/reset-password" element={<PublicRoute><ForgotPassword /></PublicRoute>} />
+          <Route path="/verify-email" element={<EmailVerification />} />
 
           {/* Student Dashboard Routes */}
           <Route path="/dashboard" element={<ProtectedRoute><Dashboard /></ProtectedRoute>} />

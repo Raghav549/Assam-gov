@@ -3,21 +3,22 @@
 // ============================================
 
 import React, { useState } from 'react';
-import { useNavigate, Link } from 'react-router-dom';
+import { useNavigate, useLocation, Link } from 'react-router-dom';
 import { useAuth } from '../../context/AuthContext';
 import { validateLogin } from '../../utils/validators';
 import { FiMail, FiLock, FiArrowRight, FiEye, FiEyeOff } from 'react-icons/fi';
 
 const Login = () => {
+  const location = useLocation();
   const [formData, setFormData] = useState({
-    email: '',
+    email: location.state?.email || '',
     password: '',
     showPassword: false
   });
   const [errors, setErrors] = useState({});
   const [isLoading, setIsLoading] = useState(false);
   
-  const { login, forgotPassword } = useAuth();
+  const { login } = useAuth();
   const navigate = useNavigate();
 
   const handleChange = (e) => {
@@ -46,18 +47,14 @@ const Login = () => {
       await login(formData.email, formData.password);
       navigate('/dashboard');
     } catch (error) {
-      console.error(error);
+      // toast already shown by AuthContext
     } finally {
       setIsLoading(false);
     }
   };
 
-  const handleForgotPassword = async () => {
-    if (!formData.email) {
-      setErrors({ email: 'Please enter your email first' });
-      return;
-    }
-    await forgotPassword(formData.email);
+  const handleForgotPassword = () => {
+    navigate('/forgot-password', { state: { email: formData.email.trim() } });
   };
 
   return (

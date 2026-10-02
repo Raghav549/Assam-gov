@@ -1,67 +1,24 @@
-const crypto = require('crypto');
-const jwt = require('jsonwebtoken');
-const { sendOtpEmail } = require('../mailer');
-
-const otpStore = new Map();
-const OTP_TTL_MS = 10 * 60 * 1000;
-const RESEND_COOLDOWN_MS = 30 * 1000;
-const MAX_ATTEMPTS = 5;
-const VERIFICATION_TTL_SECONDS = 10 * 60;
-
-function normalizeEmail(email) {
-  return String(email || '').trim().toLowerCase();
-}
-
-function isEmail(email) {
-  return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email);
-}
-
-function hashOtp(otp) {
-  return crypto.createHash('sha256').update(String(otp)).digest('hex');
-}
-
-function generateOtp() {
-  return String(crypto.randomInt(100000, 1000000));
-}
-
-function requireJwtSecret() {
-  if (!process.env.JWT_SECRET) throw new Error('JWT_SECRET is not configured on the backend.');
-  return process.env.JWT_SECRET;
-}
-
-function signVerificationToken(email) {
-  return jwt.sign(
-    { purpose: 'email_verification', email },
-    requireJwtSecret(),
-    { expiresIn: VERIFICATION_TTL_SECONDS }
-  );
-}
+const { issueOtp, verifyOtp } = require('../services/otpService');
+const { getUserByEmail } = require('../services/userService');
+const { isSupabaseConfigured } = require('../utils/supabase');
+const { normalizeEmail, isEmail } = require('../utils/validation');
+const { signVerificationToken } = require('../utils/tokens');
 
 exports.sendOtp = async (req, res, next) => {
   try {
-    const email = normalizeEmail(req.body.email);
-    if (!isEmail(email)) {
-      return res.status(400).json({ ok: false, message: 'Valid email is required' });
+    const email = normalizeEmail(req.body && req.body.email);
+    if (!isEmail(email)) return res.status(400).json({ ok: false, message: 'Valid email is required' });
+
+    // Don't make people verify an email that can never be registered.
+    if (isSupabaseConfigured()) {
+      const existing = await getUserByEmail(email);
+      if (existing) {
+        return res.status(409).json({ ok: false, code: 'EMAIL_TAKEN', message: 'An account with this email already exists. Please log in instead.' });
+      }
     }
 
-    const existing = otpStore.get(email);
-    const now = Date.now();
-    if (existing && now - existing.sentAt < RESEND_COOLDOWN_MS) {
-      const wait = Math.ceil((RESEND_COOLDOWN_MS - (now - existing.sentAt)) / 1000);
-      return res.status(429).json({ ok: false, message: `Please wait ${wait}s before requesting another OTP.` });
-    }
-
-    const otp = generateOtp();
-    await sendOtpEmail(email, otp);
-
-    otpStore.set(email, {
-      codeHash: hashOtp(otp),
-      expiresAt: now + OTP_TTL_MS,
-      sentAt: now,
-      attempts: 0
-    });
-
-    return res.json({ ok: true, message: 'OTP sent successfully to your email' });
+    const result = await issueOtp(email, 'signup');
+    return res.json({ ok: true, message: 'OTP sent successfully to your email', ...result });
   } catch (error) {
     next(error);
   }
@@ -69,35 +26,13 @@ exports.sendOtp = async (req, res, next) => {
 
 exports.verifyOtp = async (req, res, next) => {
   try {
-    const email = normalizeEmail(req.body.email);
-    const otp = String(req.body.otp || '').trim();
+    const email = normalizeEmail(req.body && req.body.email);
+    const otp = String((req.body && req.body.otp) || '').replace(/\s+/g, '');
 
-    if (!isEmail(email)) {
-      return res.status(400).json({ ok: false, message: 'Valid email is required' });
-    }
-    if (!/^\d{6}$/.test(otp)) {
-      return res.status(400).json({ ok: false, message: 'Valid 6 digit OTP is required' });
-    }
+    if (!isEmail(email)) return res.status(400).json({ ok: false, message: 'Valid email is required' });
+    if (!/^\d{6}$/.test(otp)) return res.status(400).json({ ok: false, message: 'Valid 6 digit OTP is required' });
 
-    const record = otpStore.get(email);
-    if (!record) {
-      return res.status(400).json({ ok: false, message: 'OTP not found. Please request a new OTP.' });
-    }
-    if (Date.now() > record.expiresAt) {
-      otpStore.delete(email);
-      return res.status(400).json({ ok: false, message: 'OTP has expired. Please request a new OTP.' });
-    }
-    if (record.attempts >= MAX_ATTEMPTS) {
-      otpStore.delete(email);
-      return res.status(429).json({ ok: false, message: 'Too many invalid attempts. Please request a new OTP.' });
-    }
-
-    record.attempts += 1;
-    if (hashOtp(otp) !== record.codeHash) {
-      return res.status(400).json({ ok: false, message: 'Invalid OTP' });
-    }
-
-    otpStore.delete(email);
+    await verifyOtp(email, 'signup', otp);
     return res.json({
       ok: true,
       verified: true,

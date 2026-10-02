@@ -5,6 +5,7 @@
 import React, { useEffect, useState } from 'react';
 import { useNavigate, Link } from 'react-router-dom';
 import { useAuth } from '../../context/AuthContext';
+import { warmUpBackend } from '../../services/emailService';
 import { validateSignup } from '../../utils/validators';
 import { FiMail, FiLock, FiUser, FiArrowRight } from 'react-icons/fi';
 import { MdOutlinePhoneAndroid } from 'react-icons/md';
@@ -24,6 +25,9 @@ const Signup = () => {
   
   const { signup, verifyAndCreateAccount, resendSignupOTP, pendingEmail } = useAuth();
   const navigate = useNavigate();
+
+  // Wake a sleeping (Render free tier) backend while the user is typing.
+  useEffect(() => { warmUpBackend(); }, []);
 
   useEffect(() => {
     if (resendCooldown <= 0) return undefined;
@@ -53,11 +57,12 @@ const Signup = () => {
 
       setIsLoading(true);
       try {
-        await signup(formData.email);
+        const result = await signup(formData.email);
         setStep(2);
-        setResendCooldown(30);
+        setResendCooldown(result?.resendAfterSeconds || 30);
       } catch (error) {
-        console.error(error);
+        if (error.code === 'EMAIL_TAKEN') setErrors({ email: error.message });
+        else if (error.code === 'OTP_COOLDOWN') { setStep(2); setResendCooldown(error.data?.retryAfter || 30); }
       } finally {
         setIsLoading(false);
       }
@@ -79,7 +84,9 @@ const Signup = () => {
       );
       navigate('/dashboard', { replace: true });
     } catch (error) {
-      console.error(error);
+      if (error.code === 'EMAIL_TAKEN') { setStep(1); setErrors({ email: error.message }); }
+      else if (['OTP_EXPIRED', 'OTP_LOCKED', 'OTP_NOT_FOUND', 'EMAIL_NOT_VERIFIED'].includes(error.code)) setErrors({ otp: `${error.message} Use "Resend OTP" below.` });
+      else setErrors({ otp: error.message });
     } finally {
       setIsLoading(false);
     }
@@ -89,11 +96,12 @@ const Signup = () => {
     if (resendCooldown > 0 || isLoading) return;
     setIsLoading(true);
     try {
-      await resendSignupOTP(formData.email);
+      const response = await resendSignupOTP(formData.email);
       setFormData(prev => ({ ...prev, otp: '' }));
-      setResendCooldown(30);
+      setResendCooldown(response?.resendAfterSeconds || 30);
       setErrors(prev => ({ ...prev, otp: '' }));
     } catch (error) {
+      if (error.data?.retryAfter) setResendCooldown(error.data.retryAfter);
       setErrors(prev => ({ ...prev, otp: error.message || 'Could not resend OTP.' }));
     } finally {
       setIsLoading(false);
